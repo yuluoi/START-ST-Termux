@@ -122,14 +122,14 @@ while true; do
     echo "========================================="; echo "       欢迎使用 Termux 启动脚本        "; echo "========================================="
     echo; echo "   [1] 🟢 启动 SillyTavern $keepalive_status_text"; echo; echo "   [2] 🔄 (首次)安装 / 检查更新"; echo; echo "   [3] 📦 软件包管理"; echo; echo "   [4] ⚙️  进入(可选的)原版脚本菜单"; echo; echo "   [5] 🚀 Termux 环境初始化"; echo; echo "   [6] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [7] ❌ 退出到 Termux 命令行"; echo; echo "========================================="
 
-    # --- [带动态倒计时的输入逻辑 (嵌入版)] ---
+    # --- [动态倒计时的输入逻辑] ---
     choice=""
     prompt_text="请按键选择 [1-7] "
     final_text="秒后自动选1): "
     
     # 倒计时循环
     for i in $(seq $menu_timeout -1 1); do
-        # 【核心】使用 \r 和 printf 精确控制光标和输出
+        # 使用 \r 和 printf 精确控制光标和输出
         printf "\r%s(%2d%s" "$prompt_text" "$i" "$final_text"
         read -n 1 -t 1 choice
         if [ -n "$choice" ]; then
@@ -144,7 +144,7 @@ while true; do
     case "${choice:-1}" in
         1)
             if [ ! -f "$sillytavern_dir/server.js" ]; then echo "SillyTavern 尚未安装或安装不完整，请先使用选项 [2]。"; sleep 3; continue; fi
-            echo "选择 [1]，正在快速启动 SillyTavern..."
+            echo "选择 [1]，正在启动 SillyTavern..."
             if command -v termux-wake-lock >/dev/null; then termux-wake-lock; fi
             if [ "$enable_notification_keepalive" = true ]; then
                 if command -v termux-notification >/dev/null; then termux-notification --id 1001 --title "SillyTavern 正在运行" --content "服务已启动" --ongoing; fi
