@@ -31,14 +31,20 @@ cleanup() {
         command -v termux-notification-remove >/dev/null && termux-notification-remove 1001
     fi
 }
+# --- [重要修改] 将LLM代理启动改为后台运行 ---
 start_llm_proxy() {
     local start_script_path="$llm_proxy_dir/dist/手机安卓一键脚本/666/start-termux.sh"
     echo "正在尝试启动 LLM 代理服务..."
     if [ ! -d "$llm_proxy_dir" ]; then err "LLM代理服务目录 '$llm_proxy_dir' 不存在！"; return 1; fi
     if [ ! -f "$start_script_path" ]; then err "启动脚本 '$start_script_path' 未找到！"; return 1; fi
-    echo "进入启动目录并执行..."; (cd "$(dirname "$start_script_path")" && chmod +x start-termux.sh && ./start-termux.sh start)
-    if [ $? -ne 0 ]; then err "LLM 代理服务启动失败或异常退出。"; else echo "✅ LLM 代理服务已停止。"; fi
-    read -n 1 -p "按任意键返回主菜单..."
+
+    echo "进入启动目录并在后台执行..."
+    # 在命令末尾添加 & 使其在后台运行
+    (cd "$(dirname "$start_script_path")" && chmod +x start-termux.sh && ./start-termux.sh start) &
+
+    # 移除原有的等待逻辑，直接返回
+    echo "✅ LLM 代理服务已在后台启动，即将返回主菜单。"
+    sleep 2
 }
 toggle_notification_submenu() {
     clear; echo "========================================="; echo "           通知保活功能设置            "; echo "========================================="; echo
@@ -82,6 +88,52 @@ get_st_local_ver() { command -v jq >/dev/null && [ -f "$sillytavern_dir/package.
 get_st_latest_ver() { command -v jq >/dev/null && curl -s --connect-timeout 5 "https://api.github.com/repos/SillyTavern/SillyTavern/releases/latest" | jq -r .tag_name || echo "获取失败"; }
 update_submenu() { clear; echo "========================================="; echo "          正在检查 SillyTavern 版本...         "; echo "========================================="; local_ver=$(get_st_local_ver); latest_ver=$(get_st_latest_ver); echo; echo "  当前版本: $local_ver"; echo "  最新版本: $latest_ver"; echo; if [ -z "$latest_ver" ] || [ "$latest_ver" == "获取失败" ]; then echo "  ❌ 未能获取最新版本信息..."; echo; echo "========================================="; read -n 1 -p "按任意键返回..."; return; fi; if [ "$local_ver" == "$latest_ver" ] && [ "$local_ver" != "未知" ]; then echo "  ✅ 已是最新版本。"; echo; echo "========================================="; read -n 1 -p "按任意键返回..."; return; fi; prompt_text="发现新版本！"; [ "$local_ver" == "未知" ] && prompt_text="SillyTavern 尚未安装或无法检查版本(可能未安装jq)。"; echo "  $prompt_text"; echo "========================================="; echo; echo "   [1] 立即下载/更新"; echo; echo "   [2] 暂不操作"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-2]: " choice; echo; if [ "$choice" == "1" ]; then clear; install_or_update_st_standalone; echo; read -n 1 -p "操作完成！按任意键返回..."; fi; }
 
+# --- [重要修改] 新增“附加功能”子菜单 ---
+additional_features_submenu() {
+    while true; do
+        clear
+        echo "========================================="
+        echo "                附加功能                 "
+        echo "========================================="
+        echo
+        echo "   [1] 📦 软件包管理"
+        echo
+        echo "   [2] 🚀 Termux 环境初始化"
+        echo
+        echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"
+        echo
+        echo "   [4] ⚡️ 跨会话自启设置 (当前: $enable_auto_start)"
+        echo
+        echo "   [5] ⚙️  进入(可选的)原版脚本菜单"
+        echo
+        echo "   [0] ↩️  返回主菜单"
+        echo
+        echo "========================================="
+        read -n 1 -p "请按键选择 [1-5, 0]: " sub_choice
+        echo
+        
+        case "$sub_choice" in
+            1) package_selection_submenu;;
+            2) termux_setup;;
+            3) toggle_notification_submenu;;
+            4) toggle_auto_start_submenu;;
+            5)
+                if [ ! -f "$install_script_name" ]; then
+                    clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="
+                    read -n 1 -p "请按键选择 [1-2]: " choice; echo
+                    if [ "$choice" == "1" ]; then
+                        echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"
+                        if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; exit 0; else err "下载失败！"; fi
+                    fi
+                else echo "选择 [5]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; exit 0; fi
+                ;;
+            0) break;;
+            *) err "输入错误！请重新选择。";;
+        esac
+    done
+}
+
+
 # ============================ [区块] 脚本主程序入口 ============================
 load_config
 trap cleanup EXIT
@@ -109,7 +161,8 @@ if [ "$enable_auto_start" = true ] && [ "$st_is_running" = true ]; then
         echo "🚀 根据预设逻辑，将自动启动 LLM 代理服务..."
         sleep 2
         start_llm_proxy
-        echo "LLM 代理服务已退出，脚本将关闭。"
+        # 因为 start_llm_proxy 已经变成后台启动，这里的提示语需要修改
+        echo "LLM 代理服务已在后台启动，本会话将关闭。"
         sleep 2
         exit 0
     fi
@@ -130,9 +183,10 @@ while true; do
     
     clear
     keepalive_status_text="(带唤醒锁)"; if [ "$enable_notification_keepalive" = true ]; then keepalive_status_text="(唤醒锁+通知)"; fi
-    auto_start_status_text="[开]"; if [ "$enable_auto_start" = false ]; then auto_start_status_text="[关]"; fi
+    
+    # --- [重要修改] 更新主菜单显示 ---
     echo "========================================="; echo "       欢迎使用 Termux 启动脚本        "; echo "========================================="
-    echo; echo "   [1] 🟢 启动 SillyTavern $keepalive_status_text"; echo; echo "   [2] 📤 启动LLM代理服务"; echo; echo "   [3] 🔄 (首次)安装 / 检查更新 SillyTavern"; echo; echo "   [4] 📦 软件包管理"; echo; echo "   [5] ⚙️  进入(可选的)原版脚本菜单"; echo; echo "   [6] 🚀 Termux 环境初始化"; echo; echo "   [7] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [8] ⚡️ 跨会话自启设置 (当前: $enable_auto_start)"; echo; echo "   [0] ❌ 退出到 Termux 命令行";
+    echo; echo "   [1] 🟢 启动 SillyTavern $keepalive_status_text"; echo; echo "   [2] 📤 启动LLM代理服务"; echo; echo "   [3] 🔄 (首次)安装 / 检查更新 SillyTavern"; echo; echo "   [4] 🛠️  附加功能"; echo; echo "   [0] ❌ 退出到 Termux 命令行";
     
     display_service_status
     
@@ -140,10 +194,10 @@ while true; do
     # 【重要修改】只有当SillyTavern正在运行时，才禁用倒计时
     if [ "$st_is_running" = true ]; then
         # 手动模式
-        read -n 1 -p "请按键选择 [1-8, 0]: " choice; echo
+        read -n 1 -p "请按键选择 [1-4, 0]: " choice; echo
     else
         # 倒计时模式
-        prompt_text="请按键选择 [1-8, 0] "
+        prompt_text="请按键选择 [1-4, 0] "
         final_text="秒后自动选1): "
         for i in $(seq $menu_timeout -1 1); do
             printf "\r%s(%2d%s" "$prompt_text" "$i" "$final_text"
@@ -154,6 +208,7 @@ while true; do
         choice=${choice:-1}
     fi
 
+    # --- [重要修改] 更新主菜单 case 逻辑 ---
     case "$choice" in
         1)
             if [ "$st_is_running" = true ]; then err "SillyTavern 已在运行中！"; continue; fi
@@ -169,20 +224,7 @@ while true; do
             if [ "$llm_is_running" = true ]; then err "LLM代理服务 已在运行中！"; continue; fi
             start_llm_proxy;;
         3) update_submenu;;
-        4) package_selection_submenu;;
-        5)
-            if [ ! -f "$install_script_name" ]; then
-                clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="
-                read -n 1 -p "请按键选择 [1-2]: " choice; echo
-                if [ "$choice" == "1" ]; then
-                    echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"
-                    if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; break; else err "下载失败！"; fi
-                fi
-            else echo "选择 [5]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; break; fi
-            ;;
-        6) termux_setup;;
-        7) toggle_notification_submenu;;
-        8) toggle_auto_start_submenu;;
+        4) additional_features_submenu;; # 调用新的子菜单函数
         0) echo "选择 [0]，已退回到 Termux 命令行。"; pkill -f "termux-wake-lock" &> /dev/null; break;;
         *) err "输入错误！请重新选择。";;
     esac
