@@ -165,36 +165,7 @@ update_st_incremental() {
 }
 install_st_fresh() { local repo_url="https://github.com/SillyTavern/SillyTavern"; if use_proxy; then repo_url="$proxy_url/$repo_url"; fi; local temp_new_dir="$HOME/SillyTavern_new"; echo "正在克隆全新的 SillyTavern 到临时目录..."; rm -rf "$temp_new_dir"; git clone --depth 1 --branch release "$repo_url" "$temp_new_dir" || { err "Git 克隆失败！"; rm -rf "$temp_new_dir"; return 1; }; echo "正在安装 npm 依赖..."; (cd "$temp_new_dir" && npm install) || { err "npm 依赖安装失败！"; rm -rf "$temp_new_dir"; return 1; }; if [ -d "$sillytavern_dir" ]; then echo "正在迁移您的用户数据 (characters, chats, settings...)"; if [ -d "$sillytavern_dir/data/default-user" ]; then cp -r "$sillytavern_dir/data/default-user/characters/." "$temp_new_dir/public/characters/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/chats/." "$temp_new_dir/public/chats/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/worlds/." "$temp_new_dir/public/worlds/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/groups/." "$temp_new_dir/public/groups/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/group chats/." "$temp_new_dir/public/group chats/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/OpenAI Settings/." "$temp_new_dir/public/OpenAI Settings/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/User Avatars/." "$temp_new_dir/public/User Avatars/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/backgrounds/." "$temp_new_dir/public/backgrounds/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/settings.json" "$temp_new_dir/public/settings.json" 2>/dev/null; else cp -r "$sillytavern_dir/public/characters/." "$temp_new_dir/public/characters/" 2>/dev/null; cp -r "$sillytavern_dir/public/chats/." "$temp_new_dir/public/chats/" 2>/dev/null; cp -r "$sillytavern_dir/public/worlds/." "$temp_new_dir/public/worlds/" 2>/dev/null; cp -r "$sillytavern_dir/public/groups/." "$temp_new_dir/public/groups/" 2>/dev/null; cp -r "$sillytavern_dir/public/group chats/." "$temp_new_dir/public/group chats/" 2>/dev/null; cp -r "$sillytavern_dir/public/OpenAI Settings/." "$temp_new_dir/public/OpenAI Settings/" 2>/dev/null; cp -r "$sillytavern_dir/public/User Avatars/." "$temp_new_dir/public/User Avatars/" 2>/dev/null; cp -r "$sillytavern_dir/public/backgrounds/." "$temp_new_dir/public/backgrounds/" 2>/dev/null; cp -r "$sillytavern_dir/public/settings.json" "$temp_new_dir/public/settings.json" 2>/dev/null; fi; echo "✅ 数据迁移完成。正在备份旧版本程序文件到 $sillytavern_old_dir..."; rm -rf "$sillytavern_old_dir"; mv "$sillytavern_dir" "$sillytavern_old_dir"; fi; mv "$temp_new_dir" "$sillytavern_dir"; echo "✅ 全新安装/更新完成！"; }
 version_rollback() { if [ ! -d "$sillytavern_old_dir" ]; then err "错误：未找到可用于回退的旧版本。"; return; fi; read -n 1 -p "警告：这将用旧版本覆盖当前版本，是否确认 (y/n)? " confirm; echo; if [ "$confirm" != "y" ]; then echo "已取消。"; sleep 1; return; fi; echo "正在回退版本..."; mv "$sillytavern_dir" "$HOME/SillyTavern_temp"; mv "$sillytavern_old_dir" "$sillytavern_dir"; mv "$HOME/SillyTavern_temp" "$sillytavern_old_dir"; echo "✅ 版本回退成功！"; sleep 2; }
-# [新增] 手动备份函数
-create_manual_backup() {
-    if [ -d "$sillytavern_old_dir" ]; then
-        read -n 1 -p "检测到已有备份，是否要删除并新建 (y/n)? " confirm; echo
-        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then echo "操作已取消。"; sleep 1; return; fi
-    fi
-    echo "正在新建备份...";
-    rm -rf "$sillytavern_old_dir"
-    cp -r "$sillytavern_dir" "$sillytavern_old_dir" || { err "备份失败！请检查磁盘空间和权限。"; return; }
-    echo "✅ 备份完成！"
-}
-# [新增] 手动删除备份函数
-delete_manual_backup() {
-    if [ ! -d "$sillytavern_old_dir" ]; then err "未找到任何备份，无需删除。"; return; fi
-    read -n 1 -p "是否确认要删除当前备份 (y/n)? " confirm; echo
-    if [[ "$confirm" =~ ^[Yy]$ ]]; then
-        echo "正在删除当前备份...";
-        rm -rf "$sillytavern_old_dir"
-        echo "✅ 删除完成。"
-        read -n 1 -p "强烈建议保留一个备份，是否立即新建 (y/n)? " create_new; echo
-        if [[ "$create_new" =~ ^[Yy]$ ]]; then
-            create_manual_backup
-        else
-            echo "已跳过新建备份。"
-        fi
-    else
-        echo "操作已取消。";
-    fi
-}
-update_submenu() { while true; do clear; echo "========================================="; echo "         SillyTavern 安装与更新          "; echo "========================================="; local_ver=$(get_st_local_ver); latest_ver=$(get_st_latest_ver); echo; echo "  当前版本: $local_ver"; echo "  最新版本: $latest_ver"; echo "-----------------------------------------"; echo; echo "   [1] 增量更新（新建备份）"; echo; echo "   [2] 全新更新 (新建备份，并保留数据)"; echo; echo "   [3] 恢复至当前备份版本"; echo; echo "   [4] 新建当前备份"; echo; echo "   [5] 删除当前备份"; echo; echo "   [0] 返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择: " choice; echo; case "$choice" in 1) clear; update_st_incremental; echo; read -n 1 -p "操作完成！按任意键返回...";; 2) read -n 1 -p "警告：这将重新下载并覆盖程序文件，是否确认 (y/n)? " confirm; echo; if [ "$confirm" == "y" ]; then clear; install_st_fresh; echo; read -n 1 -p "操作完成！按任意键返回..."; fi;; 3) clear; version_rollback;; 4) clear; create_manual_backup; echo; read -n 1 -p "操作完成！按任意键返回...";; 5) clear; delete_manual_backup; echo; read -n 1 -p "操作完成！按任意键返回...";; 0) break;; *) err "无效选择...";; esac; done; }
+update_submenu() { while true; do clear; echo "========================================="; echo "         SillyTavern 安装与更新          "; echo "========================================="; local_ver=$(get_st_local_ver); latest_ver=$(get_st_latest_ver); echo; echo "  当前版本: $local_ver"; echo "  最新版本: $latest_ver"; echo "-----------------------------------------"; echo; echo "   [1] 增量更新 (推荐，速度快)"; echo; echo "   [2] 全新更新 (强制覆盖，并保留数据)"; echo; echo "   [3] 版本回退 (恢复到上一个版本)"; echo; echo "   [0] 返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择: " choice; echo; case "$choice" in 1) clear; update_st_incremental; echo; read -n 1 -p "操作完成！按任意键返回...";; 2) read -n 1 -p "警告：这将重新下载并覆盖程序文件，是否确认 (y/n)? " confirm; echo; if [ "$confirm" == "y" ]; then clear; install_st_fresh; echo; read -n 1 -p "操作完成！按任意键返回..."; fi;; 3) clear; version_rollback;; 0) break;; *) err "无效选择...";; esac; done; }
 
 # --- [区块] 其他子菜单 (逻辑已修正) ---
 toggle_password_start_submenu() {
@@ -279,4 +250,123 @@ trap cleanup EXIT
 st_is_running=false
 if [ -f "$st_pid_file" ] && kill -0 "$(cat "$st_pid_file")" 2>/dev/null; then st_is_running=true; else rm -f "$st_pid_file"; fi
 if [ "$enable_auto_start" = true ] && [ "$st_is_running" = true ]; then llm_is_running=false; if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then llm_is_running=true; fi; if [ "$llm_is_running" = false ]; then st_pid=$(cat "$st_pid_file"); clear; echo "✅ 检测到 SillyTavern (PID: $st_pid) 正在运行。"; echo "🚀 根据预设逻辑，将自动启动 LLM 代理服务..."; start_llm_proxy; echo "自动启动任务完成。正在进入主菜单..."; sleep 1; fi; fi
-while true; do st_is_running=false; if [ -f "$st_pid_file" ] && kill -0 "$(cat "$st_pid_file")" 2>/dev/null; then st_is_running=true; fi; llm_is_running=false; if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then llm_is_running=true; fi; clear; keepalive_status_text="(带唤醒锁)"; if [ "$enable_notification_keepalive" = true ]; then keepalive_status_text="(唤醒锁+通知)"; fi; llm_action_text=""; if [ "$llm_is_running" = true ]; then llm_action_text="🛑 停止LLM代理服务"; else llm_action_text="📤 启动LLM代理服务"; fi; echo "========================================="; echo "       欢迎使用 Termux 启动脚本        "; echo "========================================="; echo; echo "   [1] 🟢 启动 SillyTavern $keepalive_status_text"; echo; echo "   [2] $llm_action_text"; echo; echo "   [3] 🟢 启动build反代"; echo; echo "   [4] 🔄 (首次)安装 / 检查更新 SillyTavern"; echo; echo "   [5] 🛠️  附加功能"; echo; echo "   [0] ❌ 退出到 Termux 命令行"; display_service_status; choice=""; if [ "$st_is_running" = true ]; then read -n 1 -p "请按键选择 [1-5, 0]: " choice; echo; else if [ "$enable_menu_timeout" = true ]; then prompt_text="请按键选择 [1-5, 0] "; final_text="秒后自动选1): "; for i in $(seq $menu_timeout -1 1); do printf "\r%s(%2d%s" "$prompt_text" "$i" "$final_text"; read -n 1 -t 1 choice; if [ -n "$choice" ]; then break; fi; done; printf "\r\033[K"; choice=${choice:-1}; else read -n 1 -p "请按键选择 [1-5, 0]: " choice; echo; fi; fi; case "$choice" in 1) if [ "$st_is_running" = true ]; then err "SillyTavern 已在运行中！"; continue; fi; if [ ! -f "$sillytavern_dir/server.js" ]; then err "SillyTavern 尚未安装，请用选项[4]安装。"; continue; fi; echo "选择 [1]，正在启动 SillyTavern..."; if command -v termux-wake-lock >/dev/null; then termux-wake-lock; fi; if [ "$enable_notification_keepalive" = true ]; then if command -v termux-notification >/dev/null; then termux-notification --id 1001 --title "SillyTavern 正在运行" --content "服务已启动" --ongoing; fi; fi; sleep 1; (cd "$sillytavern_dir" && node server.js) & st_pid=$!; echo "$st_pid" > "$st_pid_file"; echo "SillyTavern 已启动 (PID: $st_pid)，按任意键可返回菜单（服务将在后台继续运行）。"; read -n 1; if ! kill -0 "$st_pid" 2>/dev/null; then cleanup; fi; continue;; 2) if [ "$llm_is_running" = true ]; then stop_llm_proxy; else start_llm_proxy; fi;; 3) clear; echo "选择 [3]，正在启动 build 反代..."; echo "服务将在此处前台运行，按 Ctrl+C 停止并返回菜单。"; sleep 1; node dark-server.js; echo; read -n 1 -p "服务已停止。按任意键返回主菜单...";; 4) update_submenu;; 5) additional_features_submenu;; 0) echo "选择 [0]，已退回到 Termux 命令行。"; pkill -f "termux-wake-lock" &> /dev/null; break;; *) err "输入错误！请重新选择。";; esac; done
+
+while true; do
+    st_is_running=false
+    if [ -f "$st_pid_file" ] && kill -0 "$(cat "$st_pid_file")" 2>/dev/null; then st_is_running=true; fi
+    llm_is_running=false
+    if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then llm_is_running=true; fi
+    clear
+    keepalive_status_text="(带唤醒锁)"
+    if [ "$enable_notification_keepalive" = true ]; then keepalive_status_text="(唤醒锁+通知)"; fi
+    llm_action_text=""
+    if [ "$llm_is_running" = true ]; then llm_action_text="🛑 停止LLM代理服务"; else llm_action_text="📤 启动LLM代理服务"; fi
+    
+    echo "========================================="
+    echo "       欢迎使用 Termux 启动脚本        "
+    echo "========================================="
+    echo
+    echo "   [1] 🟢 启动 SillyTavern (仅本机)"
+    echo
+    echo "   [2] $llm_action_text"
+    echo
+    echo "   [3] 🟢 启动build反代"
+    echo
+    echo "   [4] 🔄 (首次)安装 / 检查更新 SillyTavern"
+    echo
+    echo "   [5] 🛠️  附加功能"
+    echo
+    echo "   [6] 🟢 启动 SillyTavern (局域网)"
+    echo
+    echo "   [0] ❌ 退出到 Termux 命令行"
+    
+    display_service_status
+    choice=""
+    
+    if [ "$st_is_running" = true ]; then
+        read -n 1 -p "请按键选择 [1-6, 0]: " choice
+        echo
+    else
+        if [ "$enable_menu_timeout" = true ]; then
+            prompt_text="请按键选择 [1-6, 0] "
+            final_text="秒后自动选1): "
+            for i in $(seq $menu_timeout -1 1); do
+                printf "\r%s(%2d%s" "$prompt_text" "$i" "$final_text"
+                read -n 1 -t 1 choice
+                if [ -n "$choice" ]; then break; fi
+            done
+            printf "\r\033[K"
+            choice=${choice:-1}
+        else
+            read -n 1 -p "请按键选择 [1-6, 0]: " choice
+            echo
+        fi
+    fi
+    
+    case "$choice" in
+        1)
+            if [ "$st_is_running" = true ]; then err "SillyTavern 已在运行中！"; continue; fi
+            if [ ! -f "$sillytavern_dir/server.js" ]; then err "SillyTavern 尚未安装，请用选项[4]安装。"; continue; fi
+            echo "选择 [1]，正在启动 SillyTavern..."
+            if command -v termux-wake-lock >/dev/null; then termux-wake-lock; fi
+            if [ "$enable_notification_keepalive" = true ]; then
+                if command -v termux-notification >/dev/null; then
+                    termux-notification --id 1001 --title "SillyTavern 正在运行" --content "服务已启动" --ongoing
+                fi
+            fi
+            sleep 1
+            (cd "$sillytavern_dir" && node server.js) &
+            st_pid=$!
+            echo "$st_pid" > "$st_pid_file"
+            echo "SillyTavern 已启动 (PID: $st_pid)，按任意键可返回菜单（服务将在后台继续运行）。"
+            read -n 1
+            if ! kill -0 "$st_pid" 2>/dev/null; then cleanup; fi
+            continue
+            ;;
+        2)
+            if [ "$llm_is_running" = true ]; then stop_llm_proxy; else start_llm_proxy; fi
+            ;;
+        3)
+            clear
+            echo "选择 [3]，正在启动 build 反代..."
+            echo "服务将在此处前台运行，按 Ctrl+C 停止并返回菜单。"
+            sleep 1
+            node dark-server.js
+            echo
+            read -n 1 -p "服务已停止。按任意键返回主菜单..."
+            ;;
+        4)
+            update_submenu
+            ;;
+        5)
+            additional_features_submenu
+            ;;
+        6)
+            if [ "$st_is_running" = true ]; then err "SillyTavern 已在运行中！"; continue; fi
+            if [ ! -f "$sillytavern_dir/server.js" ]; then err "SillyTavern 尚未安装，请用选项[4]安装。"; continue; fi
+            echo "选择 [6]，正在启动 SillyTavern (局域网)..."
+            if command -v termux-wake-lock >/dev/null; then termux-wake-lock; fi
+            if [ "$enable_notification_keepalive" = true ]; then
+                if command -v termux-notification >/dev/null; then
+                    termux-notification --id 1001 --title "SillyTavern 正在运行 (局域网)" --content "服务已启动" --ongoing
+                fi
+            fi
+            sleep 1
+            (cd "$sillytavern_dir" && node server.js --listen) &
+            st_pid=$!
+            echo "$st_pid" > "$st_pid_file"
+            echo "SillyTavern 已在局域网模式下启动 (PID: $st_pid)，按任意键可返回菜单（服务将在后台继续运行）。"
+            read -n 1
+            if ! kill -0 "$st_pid" 2>/dev/null; then cleanup; fi
+            continue
+            ;;
+        0)
+            echo "选择 [0]，已退回到 Termux 命令行。"
+            pkill -f "termux-wake-lock" &> /dev/null
+            break
+            ;;
+        *)
+            err "输入错误！请重新选择。"
+            ;;
+    esac
+done
