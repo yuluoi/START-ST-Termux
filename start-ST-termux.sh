@@ -5,12 +5,9 @@
 # ===================================================================================
 sillytavern_dir="$HOME/SillyTavern"
 sillytavern_old_dir="$HOME/SillyTavern_old"
-llm_proxy_dir="$HOME/-gemini-"
 st_pid_file="$HOME/.sillytavern_runner.pid"
-llm_pid_file="$HOME/.llm-proxy/logs/llm-proxy.pid"
 gcli_pid_file="$HOME/.gcli2api.pid"
 build_pid_file="$HOME/.dark-server.pid"
-llm_startup_log="$HOME/.llm-proxy/logs/startup.log"
 # gcli2api 日志文件路径 (Termux 根目录)
 gcli_log_file="$HOME/gcli2api_log.txt"
 config_file="$HOME/.st_launcher_config"
@@ -30,7 +27,6 @@ enable_menu_timeout="true"
 load_config() {
     # 默认值
     enable_notification_keepalive="true"
-    enable_auto_start="true"
     enable_password_start="false"
     enable_menu_timeout="true"
     enable_linked_start="false"
@@ -41,7 +37,6 @@ load_config() {
 }
 save_config() {
     echo "enable_notification_keepalive=$enable_notification_keepalive" > "$config_file"
-    echo "enable_auto_start=$enable_auto_start" >> "$config_file"
     echo "enable_password_start=$enable_password_start" >> "$config_file"
     echo "enable_menu_timeout=$enable_menu_timeout" >> "$config_file"
     echo "enable_linked_start=$enable_linked_start" >> "$config_file"
@@ -58,40 +53,27 @@ cleanup() {
 }
 
 # --- [重写] Gcli 状态检测专用函数 ---
-# 修复：不再仅依赖文件存在，而是真实检测进程/PM2状态，并自动清理死文件
 check_gcli_status() {
     if [ -f "$gcli_pid_file" ]; then
         local content=$(cat "$gcli_pid_file")
-        
-        # 情况1: PID文件内容是 "PM2_WEB"
         if [ "$content" == "PM2_WEB" ]; then
-            # 必须检查 pm2 是否真的在运行该服务
             if command -v pm2 >/dev/null; then
-                # 获取 web 服务的 PID (屏蔽错误输出，防止刷屏)
                 local pm2_pid=$(pm2 pid web 2>/dev/null)
-                
-                # 检查1: pm2_pid 必须是数字
-                # 检查2: kill -0 确认该 PID 的进程真实存在
                 if [[ "$pm2_pid" =~ ^[0-9]+$ ]] && [ "$pm2_pid" -gt 0 ] && kill -0 "$pm2_pid" 2>/dev/null; then
-                    return 0 # 真实存活
+                    return 0
                 fi
             fi
-            # 如果代码走到这里，说明 PID 文件虽然在，但服务挂了 -> 视为未运行并清理
             rm -f "$gcli_pid_file"
             return 1
-
-        # 情况2: PID文件内容是普通 PID 数字
         elif [ -n "$content" ]; then
             if kill -0 "$content" 2>/dev/null; then
                 return 0
             else
-                # 进程不存在 -> 清理死文件
                 rm -f "$gcli_pid_file"
                 return 1
             fi
         fi
     fi
-    # 文件不存在
     return 1
 }
 
@@ -132,51 +114,13 @@ FUNC_EOF
 }
 
 # ===================================================================================
-# --- [区块] 服务管理函数 (LLM / Gcli / Build) ---
+# --- [区块] 服务管理函数 (Gcli / Build) ---
 # ===================================================================================
 
-# 1. LLM 代理
-start_llm_proxy() {
-    if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then
-        echo "✅ LLM代理服务已在运行 (PID: $(cat "$llm_pid_file"))，跳过启动。"
-        return 0
-    fi
-
-    local start_script_path="$llm_proxy_dir/dist/手机安卓一键脚本/666/start-termux.sh"
-    echo "正在尝试启动 LLM 代理服务..."
-    if [ ! -d "$llm_proxy_dir" ]; then err "LLM代理服务目录 '$llm_proxy_dir' 不存在！"; return 1; fi
-    if [ ! -f "$start_script_path" ]; then err "启动脚本 '$start_script_path' 未找到！"; return 1; fi
-    rm -f "$llm_pid_file"; > "$llm_startup_log"
-    echo "在后台启动服务进程..."
-    (cd "$(dirname "$start_script_path")" && chmod +x start-termux.sh && ./start-termux.sh start) > "$llm_startup_log" 2>&1 &
-    
-    echo -n "正在等待服务初始化 (最长20秒) "; local timeout=20
-    while [ $timeout -gt 0 ]; do
-        if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then
-            echo; echo "✅ 服务成功启动！PID: $(cat "$llm_pid_file")。"; sleep 1; return 0
-        fi
-        echo -n "."; sleep 1; timeout=$((timeout - 1))
-    done
-    err "LLM服务未能成功启动，请检查日志。"; return 1
-}
-
-stop_llm_proxy() {
-    echo "正在停止 LLM 代理服务..."
-    if [ -f "$llm_pid_file" ]; then
-        local pid=$(cat "$llm_pid_file")
-        kill "$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null
-        rm -f "$llm_pid_file"
-        echo "✅ LLM服务已停止。"
-    else
-        echo "服务未运行。"
-    fi
-}
-
-# 2. Gcli2api 代理
+# 1. Gcli2api 代理
 start_gcli_proxy() {
-    local mode=$1 # "verbose" or "silent"
+    local mode=$1 # "verbose" (手动详细) 或 "silent" (关联静默)
     
-    # 再次调用检查函数，防止重复启动
     if check_gcli_status; then
         echo "✅ Gcli2api服务已在运行，跳过启动。"
         return 0
@@ -189,61 +133,114 @@ start_gcli_proxy() {
 
         # --- 清理旧进程 ---
         pkill -f "bash termux-start.sh" >/dev/null 2>&1
-        if command -v pm2 >/dev/null; then
-             pm2 delete web >/dev/null 2>&1
-        fi
+        if command -v pm2 >/dev/null; then pm2 delete web >/dev/null 2>&1; fi
         sleep 0.5
         
-        # 清空日志
         : > "$gcli_log_file"
 
         # --- 启动服务 ---
         nohup bash termux-start.sh < /dev/null > "$gcli_log_file" 2>&1 &
         local new_pid=$!
         
-        # --- 根据模式决定是否显示日志 ---
+        # 标记是否需要返回主菜单 (仅verbose模式成功时设为true)
+        local should_return_main=false
+
+        # =================================================================
+        # 模式分支：详细模式 (监听端口+按键) vs 静默模式 (仅等待)
+        # =================================================================
         if [ "$mode" == "verbose" ]; then
             echo "启动命令已发送 (PID: $new_pid)。"
             echo "================ 日志输出 (按任意键停止查看，服务不中断) ================"
             
+            # 后台运行 tail
             tail -f "$gcli_log_file" &
             local tail_pid=$!
             
-            read -n 1 -s -r
+            # 循环检测：共60秒 (30次 * 2秒)
+            local check_count=0
+            local max_checks=30 
+            local detected_port=false
             
+            while [ $check_count -lt $max_checks ]; do
+                # 1. read -t 2 既是延时也是按键检测
+                read -t 2 -n 1 -s -r key_input
+                
+                # 2. 如果按键了 -> 退出日志，不返回主菜单
+                if [ $? -eq 0 ]; then
+                    kill "$tail_pid" 2>/dev/null
+                    wait "$tail_pid" 2>/dev/null
+                    echo -e "\n已手动退出日志查看。"
+                    break
+                fi
+                
+                # 3. 如果没按键(超时2秒)，检测端口
+                if curl -s --connect-timeout 1 http://127.0.0.1:7861/ >/dev/null; then
+                    kill "$tail_pid" 2>/dev/null
+                    wait "$tail_pid" 2>/dev/null
+                    echo -e "\n\033[1;32mgcli2api代理成功启动，正在运行中\033[0m"
+                    detected_port=true
+                    
+                    # 成功后：延迟3秒
+                    sleep 3
+                    should_return_main=true
+                    # 注意：这里不直接 return，而是 break，让后面的 PID 写入逻辑执行
+                    break 
+                fi
+                
+                check_count=$((check_count + 1))
+            done
+            
+            # 确保 tail 被杀掉
             kill "$tail_pid" 2>/dev/null
             wait "$tail_pid" 2>/dev/null
             
+            # 如果超时未连接，提示错误
+            if [ "$detected_port" = false ] && [ $check_count -ge $max_checks ]; then
+                echo -e "\n\033[1;31mgcli2api代理启动过程中可能遇到问题，请查看详细日志\033[0m"
+            fi
+            
             echo -e "\n=========================================================================="
-            echo "已退出日志查看模式。"
+
         else
-            sleep 4
+            # --- 静默模式 (用于关联启动) ---
+            # 简单的端口轮询，或者直接等待
+            local s_count=0
+            while [ $s_count -lt 30 ]; do
+                if curl -s --connect-timeout 1 http://127.0.0.1:7861/ >/dev/null; then
+                    break
+                fi
+                sleep 1
+                s_count=$((s_count + 1))
+            done
         fi
         
-        # --- 检查进程状态 (宽容模式) ---
+        # --- 最终进程存活检查与 PID 写入 (核心修复：确保在此处写入文件) ---
         local is_success=false
         
-        # 1. 启动脚本进程还在
         if kill -0 "$new_pid" 2>/dev/null; then
             echo "$new_pid" > "$gcli_pid_file"
             is_success=true
-        # 2. 日志显示 PM2 成功
         elif grep -q "PM2" "$gcli_log_file" || grep -q "online" "$gcli_log_file" || grep -q "Done" "$gcli_log_file"; then
             echo "PM2_WEB" > "$gcli_pid_file"
             is_success=true
         fi
 
+        cd "$original_dir"
+
         if [ "$is_success" = true ]; then
-            if [ "$mode" == "verbose" ]; then echo "✅ 服务认定为运行正常。"; fi
-            cd "$original_dir"
+            # 如果是 verbose 模式且端口检测通过，返回 10 跳转主菜单
+            if [ "$should_return_main" = true ]; then
+                return 10
+            fi
             return 0
         else
-            echo "❌ 启动失败！进程已退出且未检测到PM2成功标志。"
-            echo "--- 日志最后 10 行 ---"
-            tail -n 10 "$gcli_log_file"
-            echo "---------------------"
+            if [ "$mode" == "verbose" ]; then
+                echo "❌ 启动失败！进程已退出且未检测到PM2成功标志。"
+                echo "--- 日志最后 10 行 ---"
+                tail -n 10 "$gcli_log_file"
+                echo "---------------------"
+            fi
             rm -f "$gcli_pid_file"
-            cd "$original_dir"
             return 1
         fi
     else
@@ -273,7 +270,7 @@ stop_gcli_proxy() {
     echo "✅ Gcli2api服务已停止。"
 }
 
-# 3. Build (Dark Server) 代理 - 后台启动版
+# 2. Build (Dark Server) 代理 - 后台启动版
 start_build_proxy_bg() {
     if [ -f "dark-server.js" ]; then
         echo "正在后台启动 Build (dark-server)..."
@@ -296,10 +293,6 @@ process_linked_start() {
         local start_result=0
         
         case "$linked_proxy_service" in
-            "llm")
-                start_llm_proxy
-                start_result=$?
-                ;;
             "gcli")
                 start_gcli_proxy "silent"
                 start_result=$?
@@ -317,8 +310,9 @@ process_linked_start() {
             err "⚠️ 关联服务启动失败！请检查上方报错。按任意键将继续尝试启动 SillyTavern..."
         else
             echo "✅ 关联服务启动成功。"
-            echo "⏳ 正在等待 5 秒让代理服务完成初始化..."
-            sleep 5
+            # [修改] 启动成功后，等待2秒
+            echo "⏳ 正在等待 2 秒让代理服务完成初始化..."
+            sleep 2
         fi
         echo "-----------------------------------------"
     fi
@@ -352,7 +346,6 @@ linked_start_submenu() {
         
         local current_selection_text="无"
         case "$linked_proxy_service" in
-            "llm") current_selection_text="LLM代理";;
             "build") current_selection_text="Build反代";;
             "gcli") current_selection_text="Gcli2api代理";;
         esac
@@ -377,15 +370,13 @@ linked_start_submenu() {
             1)
                 clear
                 echo "请选择要关联启动的服务 (单选):"
-                echo " [1] LLM代理"
-                echo " [2] Build反代 (dark-server)"
-                echo " [3] Gcli2api代理"
+                echo " [1] Build反代 (dark-server)"
+                echo " [2] Gcli2api代理"
                 echo " [0] 取消"
                 read -n 1 -p "选择: " sel
                 case "$sel" in
-                    1) linked_proxy_service="llm"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: LLM代理"; sleep 1;;
-                    2) linked_proxy_service="build"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: Build反代"; sleep 1;;
-                    3) linked_proxy_service="gcli"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: Gcli2api代理"; sleep 1;;
+                    1) linked_proxy_service="build"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: Build反代"; sleep 1;;
+                    2) linked_proxy_service="gcli"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: Gcli2api代理"; sleep 1;;
                     0) echo; echo "取消"; sleep 0.5;;
                     *) echo; echo "无效选择"; sleep 0.5;;
                 esac
@@ -473,16 +464,13 @@ toggle_menu_timeout_submenu() {
     fi
     sleep 2
 }
-additional_features_submenu() { while true; do clear; echo "========================================="; echo "                附加功能                 "; echo "========================================="; echo; echo "   [1] 📦 软件包管理"; echo; echo "   [2] 🚀 Termux 环境初始化"; echo; echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [4] ⚡️ 跨会话自启设置 (当前: $enable_auto_start)"; echo; echo "   [5] 🔐 密码启动 (当前: $enable_password_start)"; echo; echo "   [6] ⏳ 开/关主菜单倒计时 (当前: $enable_menu_timeout)"; echo; echo "   [7] ⚙️  进入(可选的)原版脚本菜单"; echo "   [8] 🔗 关联启动 (当前: $enable_linked_start)"; echo; echo "   [0] ↩️  返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-8, 0]: " sub_choice; echo; case "$sub_choice" in 1) package_selection_submenu;; 2) termux_setup;; 3) toggle_notification_submenu;; 4) toggle_auto_start_submenu;; 5) toggle_password_start_submenu;; 6) toggle_menu_timeout_submenu;; 7) if [ ! -f "$install_script_name" ]; then clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-2]: " choice; echo; if [ "$choice" == "1" ]; then echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"; if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; exit 0; else err "下载失败！"; fi; fi; else echo "选择 [7]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; exit 0; fi;; 8) linked_start_submenu;; 0) break;; *) err "输入错误！请重新选择。";; esac; done; }
+additional_features_submenu() { while true; do clear; echo "========================================="; echo "                附加功能                 "; echo "========================================="; echo; echo "   [1] 📦 软件包管理"; echo; echo "   [2] 🚀 Termux 环境初始化"; echo; echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [4] 🔐 密码启动 (当前: $enable_password_start)"; echo; echo "   [5] ⏳ 开/关主菜单倒计时 (当前: $enable_menu_timeout)"; echo; echo "   [6] ⚙️  进入(可选的)原版脚本菜单"; echo "   [7] 🔗 关联启动 (当前: $enable_linked_start)"; echo; echo "   [0] ↩️  返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-7, 0]: " sub_choice; echo; case "$sub_choice" in 1) package_selection_submenu;; 2) termux_setup;; 3) toggle_notification_submenu;; 4) toggle_password_start_submenu;; 5) toggle_menu_timeout_submenu;; 6) if [ ! -f "$install_script_name" ]; then clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-2]: " choice; echo; if [ "$choice" == "1" ]; then echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"; if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; exit 0; else err "下载失败！"; fi; fi; else echo "选择 [7]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; exit 0; fi;; 7) linked_start_submenu;; 0) break;; *) err "输入错误！请重新选择。";; esac; done; }
 toggle_notification_submenu() { clear; echo "========================================="; echo "           通知保活功能设置            "; echo "========================================="; echo; echo "  此功能通过创建一个常驻通知来增强后台保活。"; echo "  当前状态: $enable_notification_keepalive"; echo; echo "========================================="; read -p "请输入 'true' 或 'false' 来修改设置: " new_status; if [ "$new_status" == "true" ] || [ "$new_status" == "false" ]; then enable_notification_keepalive="$new_status"; save_config; echo "✅ 设置已更新为 [$new_status] 并已保存。"; else echo "无效输入，设置未改变。"; fi; sleep 2; }
-toggle_auto_start_submenu() { clear; echo "========================================="; echo "         跨会话自动启动设置            "; echo "========================================="; echo; echo "  此功能用于在检测到SillyTavern已运行时，"; echo "  自动在新会话中启动LLM代理服务。"; echo "  当前状态: $enable_auto_start"; echo; echo "========================================="; read -p "请输入 'true' 或 'false' 来修改设置: " new_status; if [ "$new_status" == "true" ] || [ "$new_status" == "false" ]; then enable_auto_start="$new_status"; save_config; echo "✅ 设置已更新为 [$new_status] 并已保存。"; else echo "无效输入，设置未改变。"; fi; sleep 2; }
 display_service_status() { 
     local st_status_text="\033[0;31m未启动\033[0m"; 
-    local llm_status_text="\033[0;31m未启动\033[0m"; 
     local gcli_status_text="\033[0;31m未启动\033[0m";
 
     if [ "$st_is_running" = true ]; then st_status_text="\033[0;32m已启动\033[0m"; fi; 
-    if [ "$llm_is_running" = true ]; then llm_status_text="\033[0;32m已启动\033[0m"; fi; 
     
     # [修复] 使用新函数检测全局状态
     gcli_is_running=false
@@ -494,7 +482,6 @@ display_service_status() {
     echo "========================================="; 
     echo "服务运行状态:"; 
     echo -e "  SillyTavern:   $st_status_text"; 
-    echo -e "  LLM代理服务:  $llm_status_text"; 
     echo -e "  Gcli2api反代:  $gcli_status_text";
     echo "========================================="; 
 }
@@ -505,12 +492,6 @@ termux_setup() { clear; echo "========================================="; echo "
 # [新增] 代理服务子菜单
 proxy_service_submenu() {
     while true; do
-        # 刷新 LLM 状态显示
-        local llm_submenu_is_running=false
-        if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then llm_submenu_is_running=true; fi
-        local llm_status_text=""
-        if [ "$llm_submenu_is_running" = true ]; then llm_status_text="🛑 停止 LLM 代理服务"; else llm_status_text="📤 启动 LLM 代理服务"; fi
-
         # 刷新 Gcli2api 状态显示 (使用新函数)
         local gcli_status_text=""
         if check_gcli_status; then 
@@ -524,22 +505,17 @@ proxy_service_submenu() {
         echo "           🛎️  代理服务菜单            "
         echo "========================================="
         echo
-        echo "   [1] $llm_status_text"
+        echo "   [1] 🟢 启动 build 反代 (前台调试)"
         echo
-        echo "   [2] 🟢 启动 build 反代 (前台调试)"
-        echo
-        echo -e "   [3] $gcli_status_text"
+        echo -e "   [2] $gcli_status_text"
         echo
         echo "   [0] ↩️  返回主菜单"
         echo
         echo "========================================="
-        read -n 1 -p "请按键选择 [1-3, 0]: " sub_choice
+        read -n 1 -p "请按键选择 [1-2, 0]: " sub_choice
         echo
         case "$sub_choice" in
             1)
-                if [ "$llm_submenu_is_running" = true ]; then stop_llm_proxy; else start_llm_proxy; read -n 1 -p "按任意键继续..."; fi
-                ;;
-            2)
                 clear
                 echo "正在启动 build 反代..."
                 echo "服务将在此处前台运行，按 Ctrl+C 停止并返回。"
@@ -552,7 +528,7 @@ proxy_service_submenu() {
                 echo
                 read -n 1 -p "服务已停止。按任意键返回..."
                 ;;
-            3)
+            2)
                 clear
                 # 使用新函数检测
                 if check_gcli_status; then
@@ -561,7 +537,10 @@ proxy_service_submenu() {
                 else
                     # 仅在手动启动时使用 "verbose" 模式
                     start_gcli_proxy "verbose"
-                    if [ $? -eq 0 ]; then
+                    if [ $? -eq 10 ]; then
+                        # 接收到成功信号，直接跳出循环返回主菜单
+                        break
+                    elif [ $? -eq 0 ]; then
                         read -n 1 -p "按任意键返回..."
                     else
                          read -n 1 -p "启动遇到错误，请检查。按任意键返回..."
@@ -581,14 +560,11 @@ load_config
 trap cleanup EXIT
 st_is_running=false
 if [ -f "$st_pid_file" ] && kill -0 "$(cat "$st_pid_file")" 2>/dev/null; then st_is_running=true; else rm -f "$st_pid_file"; fi
-if [ "$enable_auto_start" = true ] && [ "$st_is_running" = true ]; then llm_is_running=false; if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then llm_is_running=true; fi; if [ "$llm_is_running" = false ]; then st_pid=$(cat "$st_pid_file"); clear; echo "✅ 检测到 SillyTavern (PID: $st_pid) 正在运行。"; echo "🚀 根据预设逻辑，将自动启动 LLM 代理服务..."; start_llm_proxy; echo "自动启动任务完成。正在进入主菜单..."; sleep 1; fi; fi
 
 while true; do
     # 状态刷新检测
     st_is_running=false
     if [ -f "$st_pid_file" ] && kill -0 "$(cat "$st_pid_file")" 2>/dev/null; then st_is_running=true; fi
-    llm_is_running=false
-    if [ -f "$llm_pid_file" ] && kill -0 "$(cat "$llm_pid_file")" 2>/dev/null; then llm_is_running=true; fi
     
     # [修复] 使用新函数检测全局状态
     gcli_is_running=false
