@@ -119,7 +119,7 @@ FUNC_EOF
 
 # 1. Gcli2api 代理
 start_gcli_proxy() {
-    local mode=$1 # "verbose" (手动详细) 或 "silent" (关联静默)
+    local mode=$1 # "verbose" (手动详细) 或 "linked" (关联启动)
     
     if check_gcli_status; then
         echo "✅ Gcli2api服务已在运行，跳过启动。"
@@ -142,79 +142,91 @@ start_gcli_proxy() {
         nohup bash termux-start.sh < /dev/null > "$gcli_log_file" 2>&1 &
         local new_pid=$!
         
-        # 标记是否需要返回主菜单 (仅verbose模式成功时设为true)
-        local should_return_main=false
+        # --- 配置检测参数 ---
+        local check_interval=2
+        local max_checks=30 # 默认 60秒 (30 * 2)
+        local return_success_code=10
+        local success_sleep_time=3
+        
+        if [ "$mode" == "linked" ]; then
+            # 关联启动参数：检测40秒，间隔5秒
+            check_interval=5
+            max_checks=8 # 8 * 5 = 40秒
+            return_success_code=0 # 关联启动成功返回 0
+            success_sleep_time=0  # 不在此处等待，由外部等待
+        fi
 
-        # =================================================================
-        # 模式分支：详细模式 (监听端口+按键) vs 静默模式 (仅等待)
-        # =================================================================
-        if [ "$mode" == "verbose" ]; then
-            echo "启动命令已发送 (PID: $new_pid)。"
-            echo "================ 日志输出 (按任意键停止查看，服务不中断) ================"
+        echo "启动命令已发送 (PID: $new_pid)。"
+        echo "================ 日志输出 (按任意键停止查看，服务不中断) ================"
+        
+        # 后台运行 tail 实时显示日志
+        tail -f "$gcli_log_file" &
+        local tail_pid=$!
+        
+        local check_count=0
+        local detected_port=false
+        local should_return_main=false
+        
+        # --- 统一的循环检测逻辑 ---
+        while [ $check_count -lt $max_checks ]; do
+            # 1. read -t 既是延时也是按键检测
+            read -t $check_interval -n 1 -s -r key_input
             
-            # 后台运行 tail
-            tail -f "$gcli_log_file" &
-            local tail_pid=$!
-            
-            # 循环检测：共60秒 (30次 * 2秒)
-            local check_count=0
-            local max_checks=30 
-            local detected_port=false
-            
-            while [ $check_count -lt $max_checks ]; do
-                # 1. read -t 2 既是延时也是按键检测
-                read -t 2 -n 1 -s -r key_input
-                
-                # 2. 如果按键了 -> 退出日志，不返回主菜单
-                if [ $? -eq 0 ]; then
-                    kill "$tail_pid" 2>/dev/null
-                    wait "$tail_pid" 2>/dev/null
-                    echo -e "\n已手动退出日志查看。"
-                    break
-                fi
-                
-                # 3. 如果没按键(超时2秒)，检测端口
-                if curl -s --connect-timeout 1 http://127.0.0.1:7861/ >/dev/null; then
-                    kill "$tail_pid" 2>/dev/null
-                    wait "$tail_pid" 2>/dev/null
-                    echo -e "\n\033[1;32mgcli2api代理成功启动，正在运行中\033[0m"
-                    detected_port=true
-                    
-                    # 成功后：延迟3秒
-                    sleep 3
-                    should_return_main=true
-                    # 注意：这里不直接 return，而是 break，让后面的 PID 写入逻辑执行
-                    break 
-                fi
-                
-                check_count=$((check_count + 1))
-            done
-            
-            # 确保 tail 被杀掉
-            kill "$tail_pid" 2>/dev/null
-            wait "$tail_pid" 2>/dev/null
-            
-            # 如果超时未连接，提示错误
-            if [ "$detected_port" = false ] && [ $check_count -ge $max_checks ]; then
-                echo -e "\n\033[1;31mgcli2api代理启动过程中可能遇到问题，请查看详细日志\033[0m"
+            # 2. 如果按键了 -> 退出日志
+            if [ $? -eq 0 ]; then
+                kill "$tail_pid" 2>/dev/null
+                wait "$tail_pid" 2>/dev/null
+                echo -e "\n已手动退出日志查看。"
+                break
             fi
             
-            echo -e "\n=========================================================================="
-
-        else
-            # --- 静默模式 (用于关联启动) ---
-            # 简单的端口轮询，或者直接等待
-            local s_count=0
-            while [ $s_count -lt 30 ]; do
-                if curl -s --connect-timeout 1 http://127.0.0.1:7861/ >/dev/null; then
-                    break
+            # 3. 如果没按键(超时)，检测端口
+            if curl -s --connect-timeout 1 http://127.0.0.1:7861/ >/dev/null; then
+                kill "$tail_pid" 2>/dev/null
+                wait "$tail_pid" 2>/dev/null
+                echo -e "\n\033[1;32mgcli2api代理成功启动，正在运行中\033[0m"
+                detected_port=true
+                
+                # 成功后：执行等待(仅verbose模式需要在此等待)
+                if [ $success_sleep_time -gt 0 ]; then
+                    sleep $success_sleep_time
                 fi
-                sleep 1
-                s_count=$((s_count + 1))
-            done
+                
+                # 标记需要返回主菜单(仅当模式支持时)
+                if [ "$mode" == "verbose" ]; then
+                    should_return_main=true
+                fi
+                
+                break 
+            fi
+            
+            check_count=$((check_count + 1))
+        done
+        
+        # 确保 tail 被杀掉
+        kill "$tail_pid" 2>/dev/null
+        wait "$tail_pid" 2>/dev/null
+        
+        # 如果循环结束且未连接 -> 提示超时
+        if [ "$detected_port" = false ]; then
+            if [ $check_count -ge $max_checks ]; then
+                echo -e "\n\033[1;31mgcli2api代理启动过程中可能遇到问题(或超时)，请查看详细日志\033[0m"
+            fi
+            # 关联启动模式下，如果超时，视为失败，不应继续启动ST
+            if [ "$mode" == "linked" ]; then
+                echo "❌ [关联启动] 端口检测超时，终止后续操作。"
+                # 杀掉可能卡住的进程
+                if command -v pm2 >/dev/null; then pm2 delete web >/dev/null 2>&1; fi
+                kill "$new_pid" 2>/dev/null
+                rm -f "$gcli_pid_file"
+                cd "$original_dir"
+                return 1
+            fi
         fi
         
-        # --- 最终进程存活检查与 PID 写入 (核心修复：确保在此处写入文件) ---
+        echo -e "\n=========================================================================="
+        
+        # --- 最终进程存活检查与 PID 写入 ---
         local is_success=false
         
         if kill -0 "$new_pid" 2>/dev/null; then
@@ -228,18 +240,16 @@ start_gcli_proxy() {
         cd "$original_dir"
 
         if [ "$is_success" = true ]; then
-            # 如果是 verbose 模式且端口检测通过，返回 10 跳转主菜单
             if [ "$should_return_main" = true ]; then
-                return 10
+                return $return_success_code
+            else
+                return 0
             fi
-            return 0
         else
-            if [ "$mode" == "verbose" ]; then
-                echo "❌ 启动失败！进程已退出且未检测到PM2成功标志。"
-                echo "--- 日志最后 10 行 ---"
-                tail -n 10 "$gcli_log_file"
-                echo "---------------------"
-            fi
+            echo "❌ 启动失败！进程已退出且未检测到PM2成功标志。"
+            echo "--- 日志最后 10 行 ---"
+            tail -n 10 "$gcli_log_file"
+            echo "---------------------"
             rm -f "$gcli_pid_file"
             return 1
         fi
@@ -294,7 +304,8 @@ process_linked_start() {
         
         case "$linked_proxy_service" in
             "gcli")
-                start_gcli_proxy "silent"
+                # [修改] 使用 "linked" 模式 (带日志和端口检测)
+                start_gcli_proxy "linked"
                 start_result=$?
                 ;;
             "build")
@@ -307,11 +318,10 @@ process_linked_start() {
         esac
 
         if [ $start_result -ne 0 ]; then
-            err "⚠️ 关联服务启动失败！请检查上方报错。按任意键将继续尝试启动 SillyTavern..."
+            err "⚠️ 关联服务启动失败或超时！按任意键将继续尝试启动 SillyTavern (可能无法连接)..."
         else
-            echo "✅ 关联服务启动成功。"
             # [修改] 启动成功后，等待2秒
-            echo "⏳ 正在等待 2 秒让代理服务完成初始化..."
+            echo "⏳ 端口检测通过，等待 2 秒..."
             sleep 2
         fi
         echo "-----------------------------------------"
@@ -464,7 +474,7 @@ toggle_menu_timeout_submenu() {
     fi
     sleep 2
 }
-additional_features_submenu() { while true; do clear; echo "========================================="; echo "                附加功能                 "; echo "========================================="; echo; echo "   [1] 📦 软件包管理"; echo; echo "   [2] 🚀 Termux 环境初始化"; echo; echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [4] 🔐 密码启动 (当前: $enable_password_start)"; echo; echo "   [5] ⏳ 开/关主菜单倒计时 (当前: $enable_menu_timeout)"; echo; echo "   [6] ⚙️  进入(可选的)原版脚本菜单"; echo "   [7] 🔗 关联启动 (当前: $enable_linked_start)"; echo; echo "   [0] ↩️  返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-7, 0]: " sub_choice; echo; case "$sub_choice" in 1) package_selection_submenu;; 2) termux_setup;; 3) toggle_notification_submenu;; 4) toggle_password_start_submenu;; 5) toggle_menu_timeout_submenu;; 6) if [ ! -f "$install_script_name" ]; then clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-2]: " choice; echo; if [ "$choice" == "1" ]; then echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"; if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; exit 0; else err "下载失败！"; fi; fi; else echo "选择 [7]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; exit 0; fi;; 7) linked_start_submenu;; 0) break;; *) err "输入错误！请重新选择。";; esac; done; }
+additional_features_submenu() { while true; do clear; echo "========================================="; echo "                附加功能                 "; echo "========================================="; echo; echo "   [1] 📦 软件包管理"; echo; echo "   [2] 🚀 Termux 环境初始化"; echo; echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [4] 🔐 密码启动 (当前: $enable_password_start)"; echo; echo "   [5] ⏳ 开/关主菜单倒计时 (当前: $enable_menu_timeout)"; echo; echo "   [6] ⚙️  进入(可选的)原版脚本菜单"; echo;echo "   [7] 🔗 关联启动 (当前: $enable_linked_start)"; echo; echo "   [0] ↩️  返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-7, 0]: " sub_choice; echo; case "$sub_choice" in 1) package_selection_submenu;; 2) termux_setup;; 3) toggle_notification_submenu;; 4) toggle_password_start_submenu;; 5) toggle_menu_timeout_submenu;; 6) if [ ! -f "$install_script_name" ]; then clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-2]: " choice; echo; if [ "$choice" == "1" ]; then echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"; if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; exit 0; else err "下载失败！"; fi; fi; else echo "选择 [7]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; exit 0; fi;; 7) linked_start_submenu;; 0) break;; *) err "输入错误！请重新选择。";; esac; done; }
 toggle_notification_submenu() { clear; echo "========================================="; echo "           通知保活功能设置            "; echo "========================================="; echo; echo "  此功能通过创建一个常驻通知来增强后台保活。"; echo "  当前状态: $enable_notification_keepalive"; echo; echo "========================================="; read -p "请输入 'true' 或 'false' 来修改设置: " new_status; if [ "$new_status" == "true" ] || [ "$new_status" == "false" ]; then enable_notification_keepalive="$new_status"; save_config; echo "✅ 设置已更新为 [$new_status] 并已保存。"; else echo "无效输入，设置未改变。"; fi; sleep 2; }
 display_service_status() { 
     local st_status_text="\033[0;31m未启动\033[0m"; 
