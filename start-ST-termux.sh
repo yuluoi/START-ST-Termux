@@ -17,8 +17,6 @@ script_name=$(basename "$0")
 BASHRC_START_TAG="# <<< START MANAGED BLOCK BY $script_name >>>"
 BASHRC_END_TAG="# <<< END MANAGED BLOCK BY $script_name >>>"
 proxy_url="https://ghfast.top"
-install_script_url="https://raw.githubusercontent.com/rzline/st-cr-ins.sh/main/install.sh"
-install_script_name="install.sh"
 termux_api_apk_url="https://github.com/termux/termux-api/releases"
 menu_timeout=10
 enable_menu_timeout="true"
@@ -54,27 +52,13 @@ cleanup() {
 
 # --- [重写] Gcli 状态检测专用函数 ---
 check_gcli_status() {
-    if [ -f "$gcli_pid_file" ]; then
-        local content=$(cat "$gcli_pid_file")
-        if [ "$content" == "PM2_WEB" ]; then
-            if command -v pm2 >/dev/null; then
-                local pm2_pid=$(pm2 pid web 2>/dev/null)
-                if [[ "$pm2_pid" =~ ^[0-9]+$ ]] && [ "$pm2_pid" -gt 0 ] && kill -0 "$pm2_pid" 2>/dev/null; then
-                    return 0
-                fi
-            fi
-            rm -f "$gcli_pid_file"
-            return 1
-        elif [ -n "$content" ]; then
-            if kill -0 "$content" 2>/dev/null; then
-                return 0
-            else
-                rm -f "$gcli_pid_file"
-                return 1
-            fi
-        fi
+    # 修改：直接尝试连接 Web 前端端口，连接成功即视为运行中
+    # 这种方式速度最快，避免了 PM2 查询带来的延迟
+    if curl -s --connect-timeout 1 http://127.0.0.1:7861/ >/dev/null; then
+        return 0
+    else
+        return 1
     fi
-    return 1
 }
 
 # --- [区块] .bashrc 管理函数 ---
@@ -474,8 +458,9 @@ toggle_menu_timeout_submenu() {
     fi
     sleep 2
 }
-additional_features_submenu() { while true; do clear; echo "========================================="; echo "                附加功能                 "; echo "========================================="; echo; echo "   [1] 📦 软件包管理"; echo; echo "   [2] 🚀 Termux 环境初始化"; echo; echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [4] 🔐 密码启动 (当前: $enable_password_start)"; echo; echo "   [5] ⏳ 开/关主菜单倒计时 (当前: $enable_menu_timeout)"; echo; echo "   [6] ⚙️  进入(可选的)原版脚本菜单"; echo;echo "   [7] 🔗 关联启动 (当前: $enable_linked_start)"; echo; echo "   [0] ↩️  返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-7, 0]: " sub_choice; echo; case "$sub_choice" in 1) package_selection_submenu;; 2) termux_setup;; 3) toggle_notification_submenu;; 4) toggle_password_start_submenu;; 5) toggle_menu_timeout_submenu;; 6) if [ ! -f "$install_script_name" ]; then clear; echo "========================================="; echo "      ⚠️ $install_script_name 脚本不存在"; echo "========================================="; echo; echo "   [1] 立即下载"; echo; echo "   [2] 暂不下载"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-2]: " choice; echo; if [ "$choice" == "1" ]; then echo "正在下载 $install_script_name..."; curl -s -O "$install_script_url" && chmod +x "$install_script_name"; if [ $? -eq 0 ]; then echo "下载成功！正在进入..."; sleep 1; clear; ./"$install_script_name"; exit 0; else err "下载失败！"; fi; fi; else echo "选择 [7]，正在进入原版脚本菜单..."; sleep 1; clear; ./"$install_script_name"; exit 0; fi;; 7) linked_start_submenu;; 0) break;; *) err "输入错误！请重新选择。";; esac; done; }
+additional_features_submenu() { while true; do clear; echo "========================================="; echo "                附加功能                 "; echo "========================================="; echo; echo "   [1] 📦 软件包管理"; echo; echo "   [2] 🚀 Termux 环境初始化"; echo; echo "   [3] 🔔 通知保活设置 (当前: $enable_notification_keepalive)"; echo; echo "   [4] 🔐 密码启动 (当前: $enable_password_start)"; echo; echo "   [5] ⏳ 开/关主菜单倒计时 (当前: $enable_menu_timeout)"; echo; echo "   [6] 🔗 关联启动 (当前: $enable_linked_start)"; echo; echo "   [0] ↩️  返回主菜单"; echo; echo "========================================="; read -n 1 -p "请按键选择 [1-6, 0]: " sub_choice; echo; case "$sub_choice" in 1) package_selection_submenu;; 2) termux_setup;; 3) toggle_notification_submenu;; 4) toggle_password_start_submenu;; 5) toggle_menu_timeout_submenu;; 6) linked_start_submenu;; 0) break;; *) err "输入错误！请重新选择。";; esac; done; }
 toggle_notification_submenu() { clear; echo "========================================="; echo "           通知保活功能设置            "; echo "========================================="; echo; echo "  此功能通过创建一个常驻通知来增强后台保活。"; echo "  当前状态: $enable_notification_keepalive"; echo; echo "========================================="; read -p "请输入 'true' 或 'false' 来修改设置: " new_status; if [ "$new_status" == "true" ] || [ "$new_status" == "false" ]; then enable_notification_keepalive="$new_status"; save_config; echo "✅ 设置已更新为 [$new_status] 并已保存。"; else echo "无效输入，设置未改变。"; fi; sleep 2; }
+toggle_auto_start_submenu() { clear; echo "========================================="; echo "         跨会话自动启动设置            "; echo "========================================="; echo; echo "  此功能用于在检测到SillyTavern已运行时，"; echo "  自动在新会话中启动LLM代理服务。"; echo "  当前状态: $enable_auto_start"; echo; echo "========================================="; read -p "请输入 'true' 或 'false' 来修改设置: " new_status; if [ "$new_status" == "true" ] || [ "$new_status" == "false" ]; then enable_auto_start="$new_status"; save_config; echo "✅ 设置已更新为 [$new_status] 并已保存。"; else echo "无效输入，设置未改变。"; fi; sleep 2; }
 display_service_status() { 
     local st_status_text="\033[0;31m未启动\033[0m"; 
     local gcli_status_text="\033[0;31m未启动\033[0m";
