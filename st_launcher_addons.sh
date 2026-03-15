@@ -79,10 +79,9 @@ silent_start_submenu() {
                     1) 
                         if [ "$linked_proxy_service" == "gcli" ] && [ "$enable_linked_start" == "true" ]; then
                             echo
-                            echo "⚠️ 冲突检测: [gcli2api代理] 已在 关联启动 中开启。"
-                            echo " 1. 关闭关联启动并开启无感启动"
-                            echo " 2. 关闭无感启动并开启关联启动"
-                            echo " 3. 返回上一步"
+                            echo "⚠️ 冲突检测: [gcli2api代理] 已在 关联启动 中 开启。"
+                            echo " 1. 开启无感启动（同时关闭关联启动）"
+                            echo " 2. 返回上一步"
                             read -n 1 -p "请选择: " conflict_choice
                             case "$conflict_choice" in
                                 1)
@@ -94,14 +93,7 @@ silent_start_submenu() {
                                     echo; echo "✅ 已选择: gcli2api代理 (无感启动开启，已自动关闭关联启动)"
                                     sleep 2
                                     ;;
-                                2)
-                                    enable_silent_start="false"
-                                    silent_start_service="none"
-                                    save_config
-                                    echo; echo "✅ 保持关联启动 (已关闭无感启动)"
-                                    sleep 1.5
-                                    ;;
-                                3|*)
+                                2|*)
                                     echo; echo "已返回"
                                     sleep 0.5
                                     ;;
@@ -175,20 +167,12 @@ linked_start_submenu() {
                     2) 
                         if [ "$silent_start_service" == "gcli" ] && [ "$enable_silent_start" == "true" ]; then
                             echo
-                            echo "⚠️ 冲突检测: [gcli2api代理] 已在 无感启动 中开启。"
-                            echo " 1. 关闭关联启动并开启无感启动"
-                            echo " 2. 关闭无感启动并开启关联启动"
-                            echo " 3. 返回上一步"
+                            echo "⚠️ 冲突检测: [gcli2api代理] 已在 无感启动 中 开启。"
+                            echo " 1. 开启关联启动（同时关闭无感启动）"
+                            echo " 2. 返回上一步"
                             read -n 1 -p "请选择: " conflict_choice
                             case "$conflict_choice" in
                                 1)
-                                    enable_linked_start="false"
-                                    linked_proxy_service="none"
-                                    save_config
-                                    echo; echo "✅ 保持无感启动 (已关闭关联启动)"
-                                    sleep 1.5
-                                    ;;
-                                2)
                                     enable_silent_start="false"
                                     silent_start_service="none"
                                     linked_proxy_service="gcli"
@@ -197,7 +181,7 @@ linked_start_submenu() {
                                     echo; echo "✅ 已关联: gcli2api代理 (关联启动开启，已自动关闭无感启动)"
                                     sleep 2
                                     ;;
-                                3|*)
+                                2|*)
                                     echo; echo "已返回"
                                     sleep 0.5
                                     ;;

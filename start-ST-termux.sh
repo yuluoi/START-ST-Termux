@@ -30,6 +30,7 @@ addons_script="$HOME/START-ST-Termux/st_launcher_addons.sh"
 # 全局状态变量初始化
 st_is_running=false
 gcli_is_running=false
+monitor_pid=""
 
 # --- [区块] 配置管理 ---
 load_config() {
@@ -63,6 +64,7 @@ cleanup() {
     if [ "$enable_notification_keepalive" = true ]; then
         command -v termux-notification-remove >/dev/null && termux-notification-remove 1001
     fi
+    if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
 }
 trap cleanup EXIT
 
@@ -335,6 +337,26 @@ process_silent_start() {
     fi
 }
 
+monitor_gcli_silent() {
+    # ==========================================================
+    # [连接测试功能] 
+    # 此处用于监控无感启动下的 gcli2api 状态。
+    # 如果之后 gcli2api 的连接测试网址变更，请修改下方的 target_url 变量
+    # ==========================================================
+    local target_url="http://127.0.0.1:7861/"
+    
+    while true; do
+        sleep 60
+        if curl -s --connect-timeout 2 "$target_url" >/dev/null; then
+            echo -e "\033[0;32m✓✓✓\033[0m"
+        else
+            echo -e "\033[0;31m×××\033[0m"
+            # 尝试在后台重新唤起
+            silent_start_gcli_bg &
+        fi
+    done
+}
+
 process_linked_start() {
     if [ "$enable_linked_start" == "true" ] && [ "$linked_proxy_service" != "none" ]; then
         echo "🔗 正在关联启动服务: $linked_proxy_service ..."
@@ -441,12 +463,16 @@ while true; do
             echo "$st_pid" > "$st_pid_file"
             echo
             echo ">> SillyTavern 启动成功 (PID: $st_pid)"
-            echo ">> 随时按任意键可返回主菜单 (SillyTavern将在后台继续运行)"
             echo "--------------------------------------------------------"
             
-            read -n 1
-            if ! kill -0 "$st_pid" 2>/dev/null; then cleanup; fi
-            continue
+            if [ "$enable_silent_start" == "true" ] && [ "$silent_start_service" == "gcli" ]; then
+                monitor_gcli_silent &
+                monitor_pid=$!
+            fi
+
+            wait "$st_pid"
+            if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
+            break
             ;;
         2)
             proxy_service_submenu
@@ -477,12 +503,16 @@ while true; do
             echo "$st_pid" > "$st_pid_file"
             echo
             echo ">> SillyTavern 局域网模式启动成功 (PID: $st_pid)"
-            echo ">> 随时按任意键可返回主菜单 (SillyTavern将在后台继续运行)"
             echo "--------------------------------------------------------"
             
-            read -n 1
-            if ! kill -0 "$st_pid" 2>/dev/null; then cleanup; fi
-            continue
+            if [ "$enable_silent_start" == "true" ] && [ "$silent_start_service" == "gcli" ]; then
+                monitor_gcli_silent &
+                monitor_pid=$!
+            fi
+
+            wait "$st_pid"
+            if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
+            break
             ;;
         0)
             echo "选择 [0]，已退回到 Termux 命令行。"
