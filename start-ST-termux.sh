@@ -31,6 +31,7 @@ addons_script="$HOME/START-ST-Termux/st_launcher_addons.sh"
 st_is_running=false
 gcli_is_running=false
 monitor_pid=""
+keepalive_pid=""
 
 # --- [区块] 配置管理 ---
 load_config() {
@@ -65,6 +66,7 @@ cleanup() {
         command -v termux-notification-remove >/dev/null && termux-notification-remove 1001
     fi
     if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
+    if [ -n "$keepalive_pid" ]; then kill "$keepalive_pid" 2>/dev/null; fi
 }
 trap cleanup EXIT
 
@@ -357,6 +359,17 @@ monitor_gcli_silent() {
     done
 }
 
+console_keepalive() {
+    # ==========================================================
+    # [终端保活功能]
+    # 每隔 30 秒输出一个暗色字符，防止 Termux 前台长时间无输出被系统休眠清理
+    # ==========================================================
+    while true; do
+        sleep 30
+        echo -ne "\033[1;30m❃\033[0m"
+    done
+}
+
 process_linked_start() {
     if [ "$enable_linked_start" == "true" ] && [ "$linked_proxy_service" != "none" ]; then
         echo "🔗 正在关联启动服务: $linked_proxy_service ..."
@@ -469,9 +482,14 @@ while true; do
                 monitor_gcli_silent &
                 monitor_pid=$!
             fi
+            
+            # 开启控制台防清理保活输出
+            console_keepalive &
+            keepalive_pid=$!
 
             wait "$st_pid"
             if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
+            if [ -n "$keepalive_pid" ]; then kill "$keepalive_pid" 2>/dev/null; fi
             break
             ;;
         2)
@@ -509,9 +527,14 @@ while true; do
                 monitor_gcli_silent &
                 monitor_pid=$!
             fi
+            
+            # 开启控制台防清理保活输出
+            console_keepalive &
+            keepalive_pid=$!
 
             wait "$st_pid"
             if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
+            if [ -n "$keepalive_pid" ]; then kill "$keepalive_pid" 2>/dev/null; fi
             break
             ;;
         0)
