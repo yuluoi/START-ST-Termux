@@ -79,57 +79,6 @@ check_gcli_status() {
     fi
 }
 
-# --- [UI 核心] 统一顶部状态栏与轮询机制 ---
-draw_top_header() {
-    local st_status="\033[0;31m未启动\033[0m"
-    local gcli_status="\033[0;31m未启动\033[0m"
-    if [ "$st_is_running" = true ]; then st_status="\033[0;32m已启动\033[0m"; fi
-    if [ "$gcli_is_running" = true ]; then gcli_status="\033[0;32m已启动\033[0m"; fi
-
-    echo "========================================="
-    echo " 📊 全局服务运行状态"
-    echo -e " ST: $st_status  |  Gcli: $gcli_status"
-    echo "========================================="
-    echo
-}
-
-update_header_dynamic() {
-    local st_status="\033[0;31m未启动\033[0m"
-    local gcli_status="\033[0;31m未启动\033[0m"
-    if [ "$st_is_running" = true ]; then st_status="\033[0;32m已启动\033[0m"; fi
-    if [ "$gcli_is_running" = true ]; then gcli_status="\033[0;32m已启动\033[0m"; fi
-
-    local header="\033[s\033[1;1H=========================================\n 📊 全局服务运行状态\n ST: $st_status  |  Gcli: $gcli_status\033[K\n=========================================\033[u"
-    printf "%b" "$header"
-}
-
-poll_status() {
-    local need_redraw=false
-    
-    if [ "$st_is_running" = true ]; then
-        if ! kill -0 "$(cat "$st_pid_file" 2>/dev/null)" 2>/dev/null; then
-            st_is_running=false
-            need_redraw=true
-        fi
-    fi
-
-    if [ -f "$notify_file" ]; then 
-        local notif=$(cat "$notify_file" 2>/dev/null)
-        rm -f "$notify_file"
-        if [ "$notif" == "SUCCESS_GCLI" ]; then
-            gcli_is_running=true
-            need_redraw=true
-        elif [ "$notif" == "FAIL_GCLI" ]; then
-            gcli_is_running=false
-            need_redraw=true
-        fi
-    fi
-    
-    if [ "$need_redraw" = true ]; then
-        update_header_dynamic
-    fi
-}
-
 prompt_with_poll() {
     local prompt_text="$1"
     local var_name="$2"
@@ -138,7 +87,6 @@ prompt_with_poll() {
     while true; do
         read -t 1 -n 1 _p_choice
         local read_ret=$?
-        poll_status
         if [ $read_ret -eq 0 ] && [ -n "$_p_choice" ]; then
             printf -v "$var_name" "%s" "$_p_choice"
             echo
@@ -347,8 +295,8 @@ monitor_gcli_silent() {
     # ==========================================================
     local target_url="http://127.0.0.1:7861/"
     
+    sleep 7
     while true; do
-        sleep 60
         if curl -s --connect-timeout 2 "$target_url" >/dev/null; then
             echo -e "\033[0;32m✓✓✓\033[0m"
         else
@@ -356,16 +304,17 @@ monitor_gcli_silent() {
             # 尝试在后台重新唤起
             silent_start_gcli_bg &
         fi
+        sleep 60
     done
 }
 
 console_keepalive() {
     # ==========================================================
     # [终端保活功能]
-    # 每隔 30 秒输出一个暗色字符，防止 Termux 前台长时间无输出被系统休眠清理
+    # 每隔 10 秒输出一个暗色字符，防止 Termux 前台长时间无输出被系统休眠清理
     # ==========================================================
     while true; do
-        sleep 30
+        sleep 10  #更改输出间隔
         echo -ne "\033[1;30m❃\033[0m"
     done
 }
@@ -392,9 +341,9 @@ process_linked_start() {
 # ===================================================================================
 # --- [动态加载独立模块] ---
 # ===================================================================================
-if [ -f "$update_script" ]; then source "$update_script"; else update_submenu() { clear; draw_top_header; err "未找到安装模块: $update_script"; }; fi
-if [ -f "$proxy_script" ]; then source "$proxy_script"; else proxy_service_submenu() { clear; draw_top_header; err "未找到代理模块: $proxy_script"; }; fi
-if [ -f "$addons_script" ]; then source "$addons_script"; else additional_features_submenu() { clear; draw_top_header; err "未找到附加模块: $addons_script"; }; fi
+if [ -f "$update_script" ]; then source "$update_script"; else update_submenu() { clear; err "未找到安装模块: $update_script"; }; fi
+if [ -f "$proxy_script" ]; then source "$proxy_script"; else proxy_service_submenu() { clear; err "未找到代理模块: $proxy_script"; }; fi
+if [ -f "$addons_script" ]; then source "$addons_script"; else additional_features_submenu() { clear; err "未找到附加模块: $addons_script"; }; fi
 
 # ===================================================================================
 # --- [区块] 脚本主程序入口 ---
@@ -409,7 +358,6 @@ while true; do
     if check_gcli_status; then gcli_is_running=true; fi
 
     clear
-    draw_top_header
     
     keepalive_status_text="(带唤醒锁)"
     if [ "$enable_notification_keepalive" = true ]; then keepalive_status_text="(唤醒锁+通知)"; fi
@@ -443,7 +391,6 @@ while true; do
                 printf "\r\033[K%s(%2d%s" "$prompt_text" "$i" "$final_text"
                 read -n 1 -t 1 choice
                 ret_code=$?
-                poll_status
                 if [ $ret_code -eq 0 ] && [ -n "$choice" ]; then echo; break; fi
             done
             if [ -z "$choice" ]; then

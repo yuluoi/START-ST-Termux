@@ -29,7 +29,6 @@ version_rollback() {
 update_submenu() { 
     while true; do 
         clear
-        draw_top_header
         echo "========================================="
         echo "         SillyTavern 安装与更新          "
         echo "========================================="

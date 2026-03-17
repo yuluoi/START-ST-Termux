@@ -43,7 +43,6 @@ FUNC_EOF
 silent_start_submenu() {
     while true; do
         clear
-        draw_top_header
         local status_text="关闭"
         if [ "$enable_silent_start" == "true" ]; then status_text="开启"; fi
         
@@ -128,7 +127,6 @@ silent_start_submenu() {
 linked_start_submenu() {
     while true; do
         clear
-        draw_top_header
         local status_text="关闭"
         if [ "$enable_linked_start" == "true" ]; then status_text="开启"; fi
         
@@ -214,7 +212,6 @@ linked_start_submenu() {
 
 toggle_password_start_submenu() {
     clear
-    draw_top_header
     echo "========================================="
     echo "         🔐 命令行密码启动设置         "
     echo "========================================="
@@ -270,7 +267,6 @@ toggle_password_start_submenu() {
 
 toggle_menu_timeout_submenu() {
     clear
-    draw_top_header
     echo "========================================="
     echo "            主菜单倒计时设置             "
     echo "========================================="
@@ -293,7 +289,6 @@ package_manager_submenu() {
     local pkg_name=$1; local cmd_to_check=$2; local is_core=$3; 
     while true; do 
         clear
-        draw_top_header
         echo "========================================="
         echo "         软件包管理: $pkg_name           "
         echo "========================================="
@@ -322,7 +317,6 @@ package_manager_submenu() {
 package_selection_submenu() { 
     while true; do 
         clear
-        draw_top_header
         echo "========================================="
         echo "            必要软件包管理               "
         echo "========================================="
@@ -355,7 +349,6 @@ package_selection_submenu() {
 
 termux_setup() { 
     clear
-    draw_top_header
     echo "========================================="
     echo "        欢迎使用 Termux 环境初始化         "
     echo "========================================="
@@ -382,7 +375,6 @@ termux_setup() {
 
 toggle_notification_submenu() { 
     clear
-    draw_top_header
     echo "========================================="
     echo "            通知保活功能设置             "
     echo "========================================="
@@ -392,20 +384,54 @@ toggle_notification_submenu() {
     echo
     echo "========================================="
     read -p "请输入 'true' 或 'false' 来修改设置: " new_status
-    if [ "$new_status" == "true" ] || [ "$new_status" == "false" ]; then 
-        enable_notification_keepalive="$new_status"
+    if [ "$new_status" == "true" ]; then 
+        if ! command -v termux-notification >/dev/null; then
+            echo "❌ 检测失败: 未安装 termux-api 命令行工具，请先在[软件包管理]中安装。"
+        else
+            rm -f "$HOME/.st_notif_confirm"
+            termux-notification --id 1002 --title "Termux 启动脚本" --content "是否确认开启通知保活功能？" --button1 "是(开启)" --button1-action "touch $HOME/.st_notif_confirm; termux-notification-remove 1002" >/dev/null 2>&1
+            
+            echo "⏳ 验证请求已发出！"
+            echo "👉 请下拉手机状态栏，找到弹出的通知并点击【是(开启)】按钮。"
+            echo "等待操作中 (30秒超时)..."
+            
+            local wait_count=0
+            local confirmed=false
+            while [ $wait_count -lt 30 ]; do
+                if [ -f "$HOME/.st_notif_confirm" ]; then
+                    confirmed=true
+                    break
+                fi
+                sleep 1
+                wait_count=$((wait_count + 1))
+            done
+            
+            rm -f "$HOME/.st_notif_confirm"
+            termux-notification-remove 1002 >/dev/null 2>&1
+            
+            if [ "$confirmed" == "true" ]; then
+                enable_notification_keepalive="true"
+                save_config
+                echo "✅ 已成功通过通知栏确认！设置已更新为 [true] 并已保存。"
+            else
+                echo "❌ 等待超时: 未收到通知栏的确认指令。"
+                echo "   可能原因: 1. 手机未安装 Termux:API 安卓软件(APP)"
+                echo "             2. 系统屏蔽了通知或没有给予相关权限"
+            fi
+        fi
+    elif [ "$new_status" == "false" ]; then 
+        enable_notification_keepalive="false"
         save_config
-        echo "✅ 设置已更新为 [$new_status] 并已保存。"
+        echo "✅ 设置已更新为 [false] 并已保存。"
     else 
         echo "无效输入，设置未改变。"
     fi
-    sleep 2
+    sleep 3
 }
 
 additional_features_submenu() { 
     while true; do 
         clear
-        draw_top_header
         echo "========================================="
         echo "                附加功能                 "
         echo "========================================="
