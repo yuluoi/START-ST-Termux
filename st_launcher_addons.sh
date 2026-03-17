@@ -379,7 +379,7 @@ toggle_notification_submenu() {
     echo "            通知保活功能设置             "
     echo "========================================="
     echo
-    echo "  此功能通过创建一个常驻通知来增强后台保活。"
+    echo "  此功能通过每10秒发送一个无内容低优先级通知，随后0.1秒删除这条通知来增强后台保活。"
     echo "  当前状态: $enable_notification_keepalive"
     echo
     echo "========================================="
@@ -412,7 +412,7 @@ toggle_notification_submenu() {
             if [ "$confirmed" == "true" ]; then
                 enable_notification_keepalive="true"
                 save_config
-                echo "✅ 已成功通过通知栏确认！设置已更新为 [true] 并已保存。"
+                echo "✅ 已成功通过通知栏确认！设置已更新为 [true] 并摆保存。"
             else
                 echo "❌ 等待超时: 未收到通知栏的确认指令。"
                 echo "   可能原因: 1. 手机未安装 Termux:API 安卓软件(APP)"

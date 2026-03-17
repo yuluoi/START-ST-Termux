@@ -314,7 +314,14 @@ console_keepalive() {
     # 每隔 10 秒输出一个暗色字符，防止 Termux 前台长时间无输出被系统休眠清理
     # ==========================================================
     while true; do
-        sleep 10  #更改输出间隔
+        if [ "$enable_notification_keepalive" == "true" ] && command -v termux-notification >/dev/null; then
+            termux-notification --id 1001 --title "" --content "" --priority min
+            sleep 0.1
+            termux-notification-remove 1001
+            sleep 9.9
+        else
+            sleep 10  #更改输出间隔
+        fi
         echo -ne "\033[1;30m❃\033[0m"
     done
 }
@@ -411,11 +418,6 @@ while true; do
 
             echo "选择 [1]，正在启动 SillyTavern..."
             if command -v termux-wake-lock >/dev/null; then termux-wake-lock; fi
-            if [ "$enable_notification_keepalive" = true ]; then
-                if command -v termux-notification >/dev/null; then
-                    termux-notification --id 1001 --title "SillyTavern 正在运行" --content "服务已启动" --ongoing
-                fi
-            fi
             sleep 1
             
             (cd "$sillytavern_dir" && node server.js) &
@@ -456,11 +458,6 @@ while true; do
 
             echo "选择 [5]，正在启动 SillyTavern (局域网)..."
             if command -v termux-wake-lock >/dev/null; then termux-wake-lock; fi
-            if [ "$enable_notification_keepalive" = true ]; then
-                if command -v termux-notification >/dev/null; then
-                    termux-notification --id 1001 --title "SillyTavern 正在运行 (局域网)" --content "服务已启动" --ongoing
-                fi
-            fi
             sleep 1
             
             (cd "$sillytavern_dir" && node server.js --listen) &
