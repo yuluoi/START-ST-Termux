@@ -8,6 +8,7 @@ sillytavern_old_dir="$HOME/SillyTavern_old"
 st_pid_file="$HOME/.sillytavern_runner.pid"
 gcli_pid_file="$HOME/.gcli2api.pid"
 build_pid_file="$HOME/.dark-server.pid"
+vertex_pid_file="$HOME/.vertex-proxy.pid"
 # gcli2api 日志文件路径 (Termux 根目录)
 gcli_log_file="$HOME/gcli2api_log.txt"
 config_file="$HOME/.st_launcher_config"
@@ -79,6 +80,14 @@ check_gcli_status() {
     fi
 }
 
+check_vertex_status() {
+    if [ -f "$vertex_pid_file" ] && kill -0 "$(cat "$vertex_pid_file")" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 prompt_with_poll() {
     local prompt_text="$1"
     local var_name="$2"
@@ -96,7 +105,7 @@ prompt_with_poll() {
 }
 
 # ===================================================================================
-# --- [区块] 服务管理核心函数 (Gcli / Build) ---
+# --- [区块] 服务管理核心函数 (Gcli / Build / Vertex) ---
 # ===================================================================================
 
 start_gcli_proxy() {
@@ -233,6 +242,35 @@ start_build_proxy_bg() {
     fi
 }
 
+start_vertex_proxy_bg() {
+    if check_vertex_status; then echo "✅ Vertex Proxy已在运行，跳过启动。"; return 0; fi
+    if [ -d "$HOME/vertex-master" ] && [ -f "$HOME/vertex-master/vertex-proxy" ]; then
+        echo "正在后台启动 Vertex Proxy..."
+        local original_dir=$(pwd)
+        cd "$HOME/vertex-master" || return 1
+        nohup ./vertex-proxy > /dev/null 2>&1 &
+        local new_pid=$!
+        echo "$new_pid" > "$vertex_pid_file"
+        echo "✅ Vertex Proxy已后台启动 (PID: $new_pid)"
+        cd "$original_dir"
+        sleep 1
+        return 0
+    else
+        echo "❌ 未找到 Vertex Proxy 启动文件 ($HOME/vertex-master/vertex-proxy)，无法启动。"
+        return 1
+    fi
+}
+
+stop_vertex_proxy() {
+    echo "正在停止 Vertex Proxy..."
+    if [ -f "$vertex_pid_file" ]; then
+        kill "$(cat "$vertex_pid_file")" 2>/dev/null
+        rm -f "$vertex_pid_file"
+    fi
+    pkill -f "vertex-proxy" >/dev/null 2>&1
+    echo "✅ Vertex Proxy已停止。"
+}
+
 silent_start_gcli_bg() {
     if check_gcli_status; then return 0; fi
 
@@ -278,11 +316,29 @@ silent_start_gcli_bg() {
     fi
 }
 
+silent_start_vertex_bg() {
+    if check_vertex_status; then return 0; fi
+    if [ -d "$HOME/vertex-master" ] && [ -f "$HOME/vertex-master/vertex-proxy" ]; then
+        local original_dir=$(pwd)
+        cd "$HOME/vertex-master" || return 1
+        nohup ./vertex-proxy > /dev/null 2>&1 &
+        local new_pid=$!
+        echo "$new_pid" > "$vertex_pid_file"
+        cd "$original_dir"
+        echo "SUCCESS_VERTEX" > "$notify_file"
+        return 0
+    else
+        echo "FAIL_VERTEX" > "$notify_file"
+        return 1
+    fi
+}
+
 process_silent_start() {
     if [ "$enable_silent_start" == "true" ] && [ "$silent_start_service" != "none" ]; then
         rm -f "$notify_file"
         case "$silent_start_service" in
             "gcli") silent_start_gcli_bg & ;;
+            "vertex") silent_start_vertex_bg & ;;
         esac
     fi
 }
@@ -333,6 +389,7 @@ process_linked_start() {
         case "$linked_proxy_service" in
             "gcli") start_gcli_proxy "linked"; start_result=$? ;;
             "build") start_build_proxy_bg; start_result=$? ;;
+            "vertex") start_vertex_proxy_bg; start_result=$? ;;
         esac
 
         if [ $start_result -ne 0 ]; then

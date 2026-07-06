@@ -14,6 +14,13 @@ proxy_service_submenu() {
             gcli_status_text="🟢 启动 gcli2api 反代"
         fi
 
+        local vertex_status_text=""
+        if check_vertex_status; then 
+            vertex_status_text="🛑 停止 Vertex Proxy 代理"
+        else 
+            vertex_status_text="🟢 启动 Vertex Proxy 代理 (后台)"
+        fi
+
         clear
         echo "========================================="
         echo "            🛎️  代理服务菜单            "
@@ -23,11 +30,13 @@ proxy_service_submenu() {
         echo
         echo -e "   [2] $gcli_status_text"
         echo
+        echo -e "   [3] $vertex_status_text"
+        echo
         echo "   [0] ↩️  返回主菜单"
         echo
         echo "========================================="
         
-        prompt_with_poll "请按键选择 [1-2, 0]: " sub_choice
+        prompt_with_poll "请按键选择 [1-3, 0]: " sub_choice
         
         case "$sub_choice" in
             1)
@@ -58,6 +67,16 @@ proxy_service_submenu() {
                          read -n 1 -p "启动遇到错误，请检查。按任意键返回..."
                     fi
                 fi
+                ;;
+            3)
+                clear
+                if check_vertex_status; then
+                    stop_vertex_proxy
+                else
+                    start_vertex_proxy_bg
+                fi
+                echo
+                read -n 1 -p "按任意键返回..."
                 ;;
             0) break ;;
             *) err "输入错误！请重新选择。" ;;

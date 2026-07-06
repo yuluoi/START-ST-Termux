@@ -49,6 +49,7 @@ silent_start_submenu() {
         local current_selection_text="无"
         case "$silent_start_service" in
             "gcli") current_selection_text="gcli2api代理";;
+            "vertex") current_selection_text="Vertex Proxy代理";;
         esac
 
         echo "========================================="
@@ -71,7 +72,7 @@ silent_start_submenu() {
                 clear
                 echo "请选择要无感启动的服务 (单选):"
                 echo " [1] gcli2api代理"
-                echo " [2] (等待后续加入)"
+                echo " [2] Vertex Proxy代理"
                 echo " [0] 取消"
                 read -n 1 -p "选择: " sel
                 case "$sel" in
@@ -101,7 +102,32 @@ silent_start_submenu() {
                             silent_start_service="gcli"; enable_silent_start="true"; save_config; echo; echo "✅ 已选择: gcli2api代理"; sleep 1;
                         fi
                         ;;
-                    2) echo; echo "敬请期待"; sleep 1;;
+                    2) 
+                        if [ "$linked_proxy_service" == "vertex" ] && [ "$enable_linked_start" == "true" ]; then
+                            echo
+                            echo "⚠️ 冲突检测: [Vertex Proxy代理] 已在 关联启动 中 开启。"
+                            echo " 1. 开启无感启动（同时关闭关联启动）"
+                            echo " 2. 返回上一步"
+                            read -n 1 -p "请选择: " conflict_choice
+                            case "$conflict_choice" in
+                                1)
+                                    enable_linked_start="false"
+                                    linked_proxy_service="none"
+                                    silent_start_service="vertex"
+                                    enable_silent_start="true"
+                                    save_config
+                                    echo; echo "✅ 已选择: Vertex Proxy代理 (无感启动开启，已自动关闭关联启动)"
+                                    sleep 2
+                                    ;;
+                                2|*)
+                                    echo; echo "已返回"
+                                    sleep 0.5
+                                    ;;
+                            esac
+                        else
+                            silent_start_service="vertex"; enable_silent_start="true"; save_config; echo; echo "✅ 已选择: Vertex Proxy代理"; sleep 1;
+                        fi
+                        ;;
                     0) echo; echo "取消"; sleep 0.5;;
                     *) echo; echo "无效选择"; sleep 0.5;;
                 esac
@@ -134,6 +160,7 @@ linked_start_submenu() {
         case "$linked_proxy_service" in
             "build") current_selection_text="Build反代";;
             "gcli") current_selection_text="Gcli2api代理";;
+            "vertex") current_selection_text="Vertex Proxy代理";;
         esac
 
         echo "========================================="
@@ -158,6 +185,7 @@ linked_start_submenu() {
                 echo "请选择要关联启动的服务 (单选):"
                 echo " [1] Build反代 (dark-server)"
                 echo " [2] Gcli2api代理"
+                echo " [3] Vertex Proxy代理"
                 echo " [0] 取消"
                 read -n 1 -p "选择: " sel
                 case "$sel" in
@@ -186,6 +214,32 @@ linked_start_submenu() {
                             esac
                         else
                             linked_proxy_service="gcli"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: Gcli2api代理"; sleep 1;
+                        fi
+                        ;;
+                    3) 
+                        if [ "$silent_start_service" == "vertex" ] && [ "$enable_silent_start" == "true" ]; then
+                            echo
+                            echo "⚠️ 冲突检测: [Vertex Proxy代理] 已在 无感启动 中 开启。"
+                            echo " 1. 开启关联启动（同时关闭无感启动）"
+                            echo " 2. 返回上一步"
+                            read -n 1 -p "请选择: " conflict_choice
+                            case "$conflict_choice" in
+                                1)
+                                    enable_silent_start="false"
+                                    silent_start_service="none"
+                                    linked_proxy_service="vertex"
+                                    enable_linked_start="true"
+                                    save_config
+                                    echo; echo "✅ 已关联: Vertex Proxy代理 (关联启动开启，已自动关闭无感启动)"
+                                    sleep 2
+                                    ;;
+                                2|*)
+                                    echo; echo "已返回"
+                                    sleep 0.5
+                                    ;;
+                            esac
+                        else
+                            linked_proxy_service="vertex"; enable_linked_start="true"; save_config; echo; echo "✅ 已关联: Vertex Proxy代理"; sleep 1;
                         fi
                         ;;
                     0) echo; echo "取消"; sleep 0.5;;
