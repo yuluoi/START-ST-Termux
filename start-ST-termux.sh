@@ -244,10 +244,28 @@ start_build_proxy_bg() {
 
 start_vertex_proxy_bg() {
     if check_vertex_status; then echo "✅ Vertex Proxy已在运行，跳过启动。"; return 0; fi
-    if [ -d "$HOME/vertex-master" ] && [ -f "$HOME/vertex-master/vertex-proxy" ]; then
-        echo "正在后台启动 Vertex Proxy..."
+    if [ -d "$HOME/vertex-master" ]; then
         local original_dir=$(pwd)
         cd "$HOME/vertex-master" || return 1
+        
+        if [ ! -f "vertex-proxy" ]; then
+            echo "🔧 未找到 vertex-proxy 可执行文件，准备自动编译..."
+            if command -v go >/dev/null 2>&1; then
+                go build -o vertex-proxy ./cmd/vproxy
+                if [ $? -ne 0 ]; then
+                    echo "❌ 编译失败！请检查代码或 Go 环境。"
+                    cd "$original_dir"
+                    return 1
+                fi
+                echo "✅ 编译成功！"
+            else
+                echo "❌ 未安装 Go 语言环境，无法编译！请先安装 Go。"
+                cd "$original_dir"
+                return 1
+            fi
+        fi
+
+        echo "正在后台启动 Vertex Proxy..."
         nohup ./vertex-proxy > /dev/null 2>&1 &
         local new_pid=$!
         echo "$new_pid" > "$vertex_pid_file"
@@ -256,7 +274,7 @@ start_vertex_proxy_bg() {
         sleep 1
         return 0
     else
-        echo "❌ 未找到 Vertex Proxy 启动文件 ($HOME/vertex-master/vertex-proxy)，无法启动。"
+        echo "❌ 未找到 $HOME/vertex-master 目录，无法启动。"
         return 1
     fi
 }
@@ -318,9 +336,25 @@ silent_start_gcli_bg() {
 
 silent_start_vertex_bg() {
     if check_vertex_status; then return 0; fi
-    if [ -d "$HOME/vertex-master" ] && [ -f "$HOME/vertex-master/vertex-proxy" ]; then
+    if [ -d "$HOME/vertex-master" ]; then
         local original_dir=$(pwd)
         cd "$HOME/vertex-master" || return 1
+        
+        if [ ! -f "vertex-proxy" ]; then
+            if command -v go >/dev/null 2>&1; then
+                go build -o vertex-proxy ./cmd/vproxy
+                if [ $? -ne 0 ]; then
+                    cd "$original_dir"
+                    echo "FAIL_VERTEX" > "$notify_file"
+                    return 1
+                fi
+            else
+                cd "$original_dir"
+                echo "FAIL_VERTEX" > "$notify_file"
+                return 1
+            fi
+        fi
+
         nohup ./vertex-proxy > /dev/null 2>&1 &
         local new_pid=$!
         echo "$new_pid" > "$vertex_pid_file"
