@@ -7,6 +7,9 @@
 
 proxy_service_submenu() {
     while true; do
+        # 强制重置终端状态，解决由后台进程引起的阶梯效应
+        stty sane 2>/dev/null
+
         local gcli_status_text=""
         if check_gcli_status; then 
             gcli_status_text="🛑 停止 gcli2api 反代"
@@ -50,18 +53,22 @@ proxy_service_submenu() {
                      echo "❌ 当前目录下未找到 dark-server.js"
                 fi
                 echo
+                stty sane 2>/dev/null
                 read -n 1 -p "服务已停止。按任意键返回..."
                 ;;
             2)
                 clear
                 if check_gcli_status; then
                     stop_gcli_proxy
+                    stty sane 2>/dev/null
                     read -n 1 -p "按任意键返回..."
                 else
                     start_gcli_proxy "verbose"
-                    if [ $? -eq 10 ]; then
+                    local ret=$?
+                    stty sane 2>/dev/null
+                    if [ $ret -eq 10 ]; then
                         break
-                    elif [ $? -eq 0 ]; then
+                    elif [ $ret -eq 0 ]; then
                         read -n 1 -p "按任意键返回..."
                     else
                          read -n 1 -p "启动遇到错误，请检查。按任意键返回..."
@@ -76,6 +83,7 @@ proxy_service_submenu() {
                     start_vertex_proxy_bg
                 fi
                 echo
+                stty sane 2>/dev/null
                 read -n 1 -p "按任意键返回..."
                 ;;
             0) break ;;

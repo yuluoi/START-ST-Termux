@@ -173,6 +173,7 @@ start_gcli_proxy() {
                 echo "❌ [关联启动] 端口检测超时，终止后续操作。"
                 if command -v pm2 >/dev/null; then pm2 delete web >/dev/null 2>&1; fi
                 kill "$new_pid" 2>/dev/null; rm -f "$gcli_pid_file"; cd "$original_dir"
+                stty sane 2>/dev/null
                 return 1
             fi
         fi
@@ -189,6 +190,7 @@ start_gcli_proxy() {
         fi
 
         cd "$original_dir"
+        stty sane 2>/dev/null
 
         if [ "$is_success" = true ]; then
             if [ "$should_return_main" = true ]; then return $return_success_code; else return 0; fi
@@ -224,17 +226,19 @@ stop_gcli_proxy() {
         rm -f "$gcli_pid_file"
     fi
     pkill -f "bash termux-start.sh" >/dev/null 2>&1
+    stty sane 2>/dev/null
     echo "✅ Gcli2api服务已停止。"
 }
 
 start_build_proxy_bg() {
     if [ -f "dark-server.js" ]; then
         echo "正在后台启动 Build (dark-server)..."
-        nohup node dark-server.js > /dev/null 2>&1 &
+        nohup node dark-server.js < /dev/null > /dev/null 2>&1 &
         local new_pid=$!
         echo "$new_pid" > "$build_pid_file"
         echo "✅ Build反代已后台启动 (PID: $new_pid)"
         sleep 1
+        stty sane 2>/dev/null
         return 0
     else
         echo "❌ 当前目录下未找到 dark-server.js，无法启动。"
@@ -266,12 +270,13 @@ start_vertex_proxy_bg() {
         fi
 
         echo "正在后台启动 Vertex Proxy..."
-        nohup ./vertex-proxy > /dev/null 2>&1 &
+        nohup ./vertex-proxy < /dev/null > /dev/null 2>&1 &
         local new_pid=$!
         echo "$new_pid" > "$vertex_pid_file"
         echo "✅ Vertex Proxy已后台启动 (PID: $new_pid)"
         cd "$original_dir"
         sleep 1
+        stty sane 2>/dev/null
         return 0
     else
         echo "❌ 未找到 $HOME/vertex-master 目录，无法启动。"
@@ -286,6 +291,7 @@ stop_vertex_proxy() {
         rm -f "$vertex_pid_file"
     fi
     pkill -f "vertex-proxy" >/dev/null 2>&1
+    stty sane 2>/dev/null
     echo "✅ Vertex Proxy已停止。"
 }
 
@@ -318,6 +324,7 @@ silent_start_gcli_bg() {
         if [ "$detected_port" = false ]; then
             echo "FAIL_GCLI" > "$notify_file"
             rm -f "$gcli_pid_file"
+            stty sane 2>/dev/null
             return 1
         else
             if kill -0 "$new_pid" 2>/dev/null; then
@@ -326,6 +333,7 @@ silent_start_gcli_bg() {
                 echo "PM2_WEB" > "$gcli_pid_file"
             fi
             echo "SUCCESS_GCLI" > "$notify_file"
+            stty sane 2>/dev/null
             return 0
         fi
     else
@@ -355,10 +363,11 @@ silent_start_vertex_bg() {
             fi
         fi
 
-        nohup ./vertex-proxy > /dev/null 2>&1 &
+        nohup ./vertex-proxy < /dev/null > /dev/null 2>&1 &
         local new_pid=$!
         echo "$new_pid" > "$vertex_pid_file"
         cd "$original_dir"
+        stty sane 2>/dev/null
         echo "SUCCESS_VERTEX" > "$notify_file"
         return 0
     else
@@ -455,6 +464,8 @@ while true; do
     gcli_is_running=false
     if check_gcli_status; then gcli_is_running=true; fi
 
+    # 主循环恢复终端状态
+    stty sane 2>/dev/null
     clear
     
     keepalive_status_text="(带唤醒锁)"
@@ -575,6 +586,7 @@ while true; do
         0)
             echo "选择 [0]，已退回到 Termux 命令行。"
             pkill -f "termux-wake-lock" &> /dev/null
+            stty sane 2>/dev/null
             break
             ;;
         *)
