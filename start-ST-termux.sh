@@ -406,8 +406,8 @@ monitor_gcli_silent() {
 
 console_keepalive() {
     # ==========================================================
-    # [终端保活功能]
-    # 每隔 10 秒输出一个暗色字符，防止 Termux 前台长时间无输出被系统休眠清理
+    # [后台通知保活功能]
+    # 定时发送无感通知防止 Termux 被系统休眠清理
     # ==========================================================
     while true; do
         if [ "$enable_notification_keepalive" == "true" ] && command -v termux-notification >/dev/null; then
@@ -416,9 +416,8 @@ console_keepalive() {
             termux-notification-remove 1001
             sleep 9.9
         else
-            sleep 10  #更改输出间隔
+            sleep 10
         fi
-        echo -ne "\033[1;30m❃\033[0m"
     done
 }
 
@@ -533,7 +532,7 @@ while true; do
                 monitor_pid=$!
             fi
             
-            # 开启控制台防清理保活输出
+            # 开启通知防清理保活逻辑
             console_keepalive &
             keepalive_pid=$!
 
@@ -573,7 +572,7 @@ while true; do
                 monitor_pid=$!
             fi
             
-            # 开启控制台防清理保活输出
+            # 开启通知防清理保活逻辑
             console_keepalive &
             keepalive_pid=$!
 
