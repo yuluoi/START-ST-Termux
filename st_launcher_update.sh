@@ -19,7 +19,66 @@ update_st_incremental() {
 }
 
 install_st_fresh() {
-    local repo_url="https://github.com/SillyTavern/SillyTavern"; if use_proxy; then repo_url="$proxy_url/$repo_url"; fi; local temp_new_dir="$HOME/SillyTavern_new"; echo "正在克隆全新的 SillyTavern 到临时目录..."; rm -rf "$temp_new_dir"; git clone --depth 1 --branch release "$repo_url" "$temp_new_dir" || { err "Git 克隆失败！"; rm -rf "$temp_new_dir"; return 1; }; echo "正在安装 npm 依赖..."; (cd "$temp_new_dir" && npm install) || { err "npm 依赖安装失败！"; rm -rf "$temp_new_dir"; return 1; }; if [ -d "$sillytavern_dir" ]; then echo "正在迁移用户数据..."; if [ -d "$sillytavern_dir/data/default-user" ]; then cp -r "$sillytavern_dir/data/default-user/characters/." "$temp_new_dir/public/characters/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/chats/." "$temp_new_dir/public/chats/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/worlds/." "$temp_new_dir/public/worlds/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/groups/." "$temp_new_dir/public/groups/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/group chats/." "$temp_new_dir/public/group chats/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/OpenAI Settings/." "$temp_new_dir/public/OpenAI Settings/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/User Avatars/." "$temp_new_dir/public/User Avatars/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/backgrounds/." "$temp_new_dir/public/backgrounds/" 2>/dev/null; cp -r "$sillytavern_dir/data/default-user/settings.json" "$temp_new_dir/public/settings.json" 2>/dev/null; else cp -r "$sillytavern_dir/public/characters/." "$temp_new_dir/public/characters/" 2>/dev/null; cp -r "$sillytavern_dir/public/chats/." "$temp_new_dir/public/chats/" 2>/dev/null; cp -r "$sillytavern_dir/public/worlds/." "$temp_new_dir/public/worlds/" 2>/dev/null; cp -r "$sillytavern_dir/public/groups/." "$temp_new_dir/public/groups/" 2>/dev/null; cp -r "$sillytavern_dir/public/group chats/." "$temp_new_dir/public/group chats/" 2>/dev/null; cp -r "$sillytavern_dir/public/OpenAI Settings/." "$temp_new_dir/public/OpenAI Settings/" 2>/dev/null; cp -r "$sillytavern_dir/public/User Avatars/." "$temp_new_dir/public/User Avatars/" 2>/dev/null; cp -r "$sillytavern_dir/public/backgrounds/." "$temp_new_dir/public/backgrounds/" 2>/dev/null; cp -r "$sillytavern_dir/public/settings.json" "$temp_new_dir/public/settings.json" 2>/dev/null; fi; echo "✅ 数据迁移完成。正在备份旧版本程序文件到 $sillytavern_old_dir..."; rm -rf "$sillytavern_old_dir"; mv "$sillytavern_dir" "$sillytavern_old_dir"; fi; mv "$temp_new_dir" "$sillytavern_dir"; echo "✅ 全新安装/更新完成！";
+    local repo_url="https://github.com/SillyTavern/SillyTavern"
+    if use_proxy; then repo_url="$proxy_url/$repo_url"; fi
+    local temp_new_dir="$HOME/SillyTavern_new"
+    
+    echo "正在克隆全新的 SillyTavern 到临时目录..."
+    rm -rf "$temp_new_dir"
+    git clone --depth 1 --branch release "$repo_url" "$temp_new_dir" || { err "Git 克隆失败！"; rm -rf "$temp_new_dir"; return 1; }
+    
+    echo "正在安装 npm 依赖..."
+    (cd "$temp_new_dir" && npm install) || { err "npm 依赖安装失败！"; rm -rf "$temp_new_dir"; return 1; }
+    
+    if [ -d "$sillytavern_dir" ]; then 
+        echo "正在迁移用户数据..."
+        if [ -d "$sillytavern_dir/data/default-user" ]; then 
+            cp -r "$sillytavern_dir/data/default-user/characters/." "$temp_new_dir/public/characters/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/chats/." "$temp_new_dir/public/chats/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/worlds/." "$temp_new_dir/public/worlds/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/groups/." "$temp_new_dir/public/groups/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/group chats/." "$temp_new_dir/public/group chats/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/OpenAI Settings/." "$temp_new_dir/public/OpenAI Settings/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/User Avatars/." "$temp_new_dir/public/User Avatars/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/backgrounds/." "$temp_new_dir/public/backgrounds/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/settings.json" "$temp_new_dir/public/settings.json" 2>/dev/null
+            
+            # 修复：提前创建目标目录，并直接复制到新版 data/default-user/ 中，防止静默失败
+            mkdir -p "$temp_new_dir/data/default-user/extensions"
+            mkdir -p "$temp_new_dir/data/default-user/backups"
+            mkdir -p "$temp_new_dir/data/default-user/themes"
+            
+            cp -r "$sillytavern_dir/data/default-user/extensions/." "$temp_new_dir/data/default-user/extensions/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/backups/." "$temp_new_dir/data/default-user/backups/" 2>/dev/null
+            cp -r "$sillytavern_dir/data/default-user/themes/." "$temp_new_dir/data/default-user/themes/" 2>/dev/null
+        else 
+            cp -r "$sillytavern_dir/public/characters/." "$temp_new_dir/public/characters/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/chats/." "$temp_new_dir/public/chats/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/worlds/." "$temp_new_dir/public/worlds/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/groups/." "$temp_new_dir/public/groups/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/group chats/." "$temp_new_dir/public/group chats/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/OpenAI Settings/." "$temp_new_dir/public/OpenAI Settings/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/User Avatars/." "$temp_new_dir/public/User Avatars/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/backgrounds/." "$temp_new_dir/public/backgrounds/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/settings.json" "$temp_new_dir/public/settings.json" 2>/dev/null
+            
+            # 兼容旧版本结构
+            mkdir -p "$temp_new_dir/public/extensions"
+            mkdir -p "$temp_new_dir/public/backups"
+            mkdir -p "$temp_new_dir/public/themes"
+            
+            cp -r "$sillytavern_dir/public/extensions/." "$temp_new_dir/public/extensions/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/backups/." "$temp_new_dir/public/backups/" 2>/dev/null
+            cp -r "$sillytavern_dir/public/themes/." "$temp_new_dir/public/themes/" 2>/dev/null
+        fi
+        
+        echo "✅ 数据迁移完成。正在备份旧版本程序文件到 $sillytavern_old_dir..."
+        rm -rf "$sillytavern_old_dir"
+        mv "$sillytavern_dir" "$sillytavern_old_dir"
+    fi
+    
+    mv "$temp_new_dir" "$sillytavern_dir"
+    echo "✅ 全新安装/更新完成！"
 }
 
 version_rollback() {
