@@ -29,6 +29,7 @@ enable_menu_timeout="true"
 update_script="$HOME/START-ST-Termux/st_launcher_update.sh"
 proxy_script="$HOME/START-ST-Termux/st_launcher_proxy.sh"
 addons_script="$HOME/START-ST-Termux/st_launcher_addons.sh"
+recover_script="$HOME/START-ST-Termux/Recover_record.sh"
 
 # 全局状态变量初始化
 st_is_running=false
@@ -447,6 +448,7 @@ process_linked_start() {
 if [ -f "$update_script" ]; then source "$update_script"; else update_submenu() { clear; err "未找到安装模块: $update_script"; }; fi
 if [ -f "$proxy_script" ]; then source "$proxy_script"; else proxy_service_submenu() { clear; err "未找到代理模块: $proxy_script"; }; fi
 if [ -f "$addons_script" ]; then source "$addons_script"; else additional_features_submenu() { clear; err "未找到附加模块: $addons_script"; }; fi
+if [ -f "$recover_script" ]; then source "$recover_script"; else recover_chat_history() { clear; err "未找到恢复模块: $recover_script"; }; fi
 
 # ===================================================================================
 # --- [区块] 脚本主程序入口 ---
@@ -483,16 +485,18 @@ while true; do
     echo
     echo "   [5] 🟢 启动 SillyTavern (局域网)"
     echo
+    echo "   [6] 📂 聊天记录恢复"
+    echo
     echo "   [0] ❌ 退出到 Termux 命令行"
     echo "========================================="
     
     choice=""
     
     if [ "$st_is_running" = true ]; then
-        prompt_with_poll "请按键选择 [1-5, 0]: " choice
+        prompt_with_poll "请按键选择 [1-6, 0]: " choice
     else
         if [ "$enable_menu_timeout" = true ]; then
-            prompt_text="请按键选择 [1-5, 0] "
+            prompt_text="请按键选择 [1-6, 0] "
             final_text="秒后自动选1): "
             for i in $(seq $menu_timeout -1 1); do
                 printf "\r\033[K%s(%2d%s" "$prompt_text" "$i" "$final_text"
@@ -505,7 +509,7 @@ while true; do
                 choice=1
             fi
         else
-            prompt_with_poll "请按键选择 [1-5, 0]: " choice
+            prompt_with_poll "请按键选择 [1-6, 0]: " choice
         fi
     fi
     
@@ -580,6 +584,9 @@ while true; do
             if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null; fi
             if [ -n "$keepalive_pid" ]; then kill "$keepalive_pid" 2>/dev/null; fi
             break
+            ;;
+        6)
+            recover_chat_history
             ;;
         0)
             echo "选择 [0]，正在清理并退回到 Termux 命令行..."
