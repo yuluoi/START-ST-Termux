@@ -174,10 +174,15 @@ recover_chat_history() {
                         
                         if [ "$strategy" == "1" ]; then
                             # 策略 1：找到即恢复
+                            # 获取精准到毫秒的当前时间并构造新文件名
+                            local current_time=$(date +"%Y-%m-%d@%Hh%Mm%Ss%3Nms")
+                            local new_filename="${target} - ${current_time}.jsonl"
+                            
                             echo "✅ [$target] 匹配成功 (name出现 ${name_count} 次) -> $(basename "$file")"
-                            cp "$file" "$chats_dir/$target/"
+                            # 在复制的同时重命名文件，绝对不影响源文件
+                            cp "$file" "$chats_dir/$target/$new_filename"
                             if [ $? -eq 0 ]; then
-                                echo "   🎉 复制完成"
+                                echo "   🎉 复制完成，已重命名为: $new_filename"
                             else
                                 echo "   ❌ 复制失败，请检查权限"
                             fi
@@ -206,10 +211,15 @@ recover_chat_history() {
             local best_file="${best_files["$target"]}"
             if [ -n "$best_file" ]; then
                 local best_count="${max_counts["$target"]}"
+                # 获取精准到毫秒的当前时间并构造新文件名
+                local current_time=$(date +"%Y-%m-%d@%Hh%Mm%Ss%3Nms")
+                local new_filename="${target} - ${current_time}.jsonl"
+                
                 echo "✅ [$target] 匹配成功 (最高对话数: ${best_count} 次) -> $(basename "$best_file")"
-                cp "$best_file" "$chats_dir/$target/"
+                # 在复制的同时重命名文件，绝对不影响源文件
+                cp "$best_file" "$chats_dir/$target/$new_filename"
                 if [ $? -eq 0 ]; then
-                    echo "   🎉 复制完成"
+                    echo "   🎉 复制完成，已重命名为: $new_filename"
                 else
                     echo "   ❌ 复制失败，请检查权限"
                 fi
