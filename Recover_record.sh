@@ -1,13 +1,13 @@
 #!/bin/bash
 # ===================================================================================
-# --- [附加模块] 聊天记录恢复模块 ---
+# --- [附加模块] 聊天记录恢复模块 (实验性版本) ---
 # 文件名: Recover_record.sh
 # ===================================================================================
 
 recover_chat_history() {
     clear
     echo "========================================="
-    echo "            📂 聊天记录恢复             "
+    echo "       📂 聊天记录恢复 (实验性版本)      "
     echo "========================================="
     echo
     
@@ -108,15 +108,36 @@ recover_chat_history() {
     fi
 
     echo "========================================="
-    echo "🔍 正在进行智能匹配 (时间倒序，大小>=1.5MB)..."
+    echo "请选择恢复策略："
+    echo " [1] 时间最晚 (取最近的备份，速度较快)"
+    echo " [2] 对话数最多 (忽略时间，取该角色对话记录最多的备份，需全局扫描)"
     
+    local strategy=""
+    while true; do
+        read -n 1 -p "请输入序号(1 或 2): " strategy
+        echo
+        if [[ "$strategy" == "1" ]] || [[ "$strategy" == "2" ]]; then
+            break
+        else
+            echo "输入无效，请输入 1 或 2。"
+        fi
+    done
+
+    echo "========================================="
+    echo "🔍 正在进行智能匹配 (大小>=1MB，且包含至少2次角色name)..."
+    if [ "$strategy" == "2" ]; then
+        echo "⏳ 启用全局扫描模式，请耐心等待..."
+    fi
+    
+    # 用于策略2的记录数组
+    declare -A max_counts
+    declare -A best_files
+
     # 智能搜索逻辑：
     # 按照时间倒序遍历备份文件，比对当前尚未恢复的角色。
-    # 一旦某角色的最新备份被找到，就从 pending_folders 中剔除。
-    # 如果 pending_folders 为空，说明全部找齐，立即提前结束搜索循环。
     while IFS= read -r file; do
-        # 如果所有待恢复角色都已找到，直接跳出读取文件的大循环，避免无效搜索
-        if [ ${#pending_folders[@]} -eq 0 ]; then
+        # 策略1：如果所有待恢复角色都已找到，直接跳出读取文件的大循环，避免无效搜索
+        if [ "$strategy" == "1" ] && [ ${#pending_folders[@]} -eq 0 ]; then
             break
         fi
         
@@ -127,8 +148,7 @@ recover_chat_history() {
         
         # =========================================================
         # 【修改文件大小限制说明】
-        # 这里判断文件大小是否符合条件。默认设置为不低于 1.5MB。
-        # 如果你想修改大小限制，请将下方 if 判断中的数字替换为对应字节数：
+        # 这里判断文件大小是否符合条件。实验版本设置为不低于 1MB。
         # 0.5 MB = 524288  字节
         # 1 MB   = 1048576 字节
         # 1.5 MB = 1572864 字节
@@ -136,36 +156,74 @@ recover_chat_history() {
         # 2.5 MB = 2621440 字节
         # 3 MB   = 3145728 字节
         # =========================================================
-        if [ "$size" -ge 1572864 ]; then
-            # 遍历当前尚未找到备份的目标角色
+        if [ "$size" -ge 1048576 ]; then
+            # 遍历当前尚未找到备份/尚未扫描完毕的目标角色
             for target in "${!pending_folders[@]}"; do
                 local target_string="\"chatId\":\"$target - "
+                local target_name_string="\"name\":\"$target\""
                 
-                # 快速匹配目标字符串内容 (使用 -F 避免正则符号冲突)
+                # 步骤 1: 极速匹配目标 chatId 字符串
                 if grep -q -F "$target_string" "$file"; then
-                    echo "✅ [$target] 匹配成功 -> $(basename "$file")"
-                    cp "$file" "$chats_dir/$target/"
-                    if [ $? -eq 0 ]; then
-                        echo "   🎉 复制完成"
-                    else
-                        echo "   ❌ 复制失败，请检查权限"
+                    
+                    # 步骤 2: 统计 "name":"文件夹名" 出现的次数
+                    local name_count
+                    name_count=$(grep -o -F "$target_name_string" "$file" | wc -l)
+                    
+                    # 判断出现次数是否至少为 2 次
+                    if [ "$name_count" -ge 2 ]; then
+                        
+                        if [ "$strategy" == "1" ]; then
+                            # 策略 1：找到即恢复
+                            echo "✅ [$target] 匹配成功 (name出现 ${name_count} 次) -> $(basename "$file")"
+                            cp "$file" "$chats_dir/$target/"
+                            if [ $? -eq 0 ]; then
+                                echo "   🎉 复制完成"
+                            else
+                                echo "   ❌ 复制失败，请检查权限"
+                            fi
+                            # 从列表中剔除
+                            unset pending_folders["$target"]
+                            break # 跳出内层 for 循环，处理下一个文件
+                            
+                        elif [ "$strategy" == "2" ]; then
+                            # 策略 2：记录最高次数和对应文件
+                            local current_max=${max_counts["$target"]:-0}
+                            # 使用 -gt 确保在次数并列时，取时间更晚的那个（因为 ls -t 最先扫到的是最新的）
+                            if [ "$name_count" -gt "$current_max" ]; then
+                                max_counts["$target"]=$name_count
+                                best_files["$target"]="$file"
+                            fi
+                        fi
                     fi
-                    
-                    # 匹配成功后，将该角色从待找寻列表中删除，此后不再搜索它的旧备份
-                    unset pending_folders["$target"]
-                    
-                    # 一个备份文件通常对应一个角色，找到即可跳出内层循环继续看下一个文件
-                    break
                 fi
             done
         fi
     done < <(ls -t "${backup_files[@]}")
     
+    # 策略 2 的善后处理：循环结束后执行复制
+    if [ "$strategy" == "2" ]; then
+        for target in "${!pending_folders[@]}"; do
+            local best_file="${best_files["$target"]}"
+            if [ -n "$best_file" ]; then
+                local best_count="${max_counts["$target"]}"
+                echo "✅ [$target] 匹配成功 (最高对话数: ${best_count} 次) -> $(basename "$best_file")"
+                cp "$best_file" "$chats_dir/$target/"
+                if [ $? -eq 0 ]; then
+                    echo "   🎉 复制完成"
+                else
+                    echo "   ❌ 复制失败，请检查权限"
+                fi
+                # 从列表中剔除，以配合后续的未找到检查
+                unset pending_folders["$target"]
+            fi
+        done
+    fi
+    
     echo "========================================="
     
     # 检查是否还有未找到备份的角色
     if [ ${#pending_folders[@]} -gt 0 ]; then
-        echo "⚠️ 以下角色的备份未找到符合条件的文件 (>=1.5MB 且包含对应字段):"
+        echo "⚠️ 以下角色的备份未找到符合条件的文件 (>=1MB，含对应字段，且name>=2次):"
         for target in "${!pending_folders[@]}"; do
             echo "   - $target"
         done
