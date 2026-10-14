@@ -109,28 +109,30 @@ recover_chat_history() {
 
     echo "========================================="
     echo "请选择恢复策略："
-    echo " [1] 时间最晚 (取最近的备份，速度较快)"
-    echo " [2] 对话数最多 (忽略时间，取该角色对话记录最多的备份，需全局扫描)"
+    echo " [1] 备份文件时间最晚"
+    echo " [2] 对话发送时间最晚"
+    echo " [3] 对话最多"
     
     local strategy=""
     while true; do
-        read -n 1 -p "请输入序号(1 或 2): " strategy
+        read -n 1 -p "请输入序号(1、2 或 3): " strategy
         echo
-        if [[ "$strategy" == "1" ]] || [[ "$strategy" == "2" ]]; then
+        if [[ "$strategy" == "1" ]] || [[ "$strategy" == "2" ]] || [[ "$strategy" == "3" ]]; then
             break
         else
-            echo "输入无效，请输入 1 或 2。"
+            echo "输入无效，请输入 1、2 或 3。"
         fi
     done
 
     echo "========================================="
     echo "🔍 正在进行智能匹配 (大小>=1MB，且包含至少2次角色name)..."
-    if [ "$strategy" == "2" ]; then
+    if [ "$strategy" == "2" ] || [ "$strategy" == "3" ]; then
         echo "⏳ 启用全局扫描模式，请耐心等待..."
     fi
     
-    # 用于策略2的记录数组
+    # 用于策略2、3的记录数组
     declare -A max_counts
+    declare -A latest_dates
     declare -A best_files
 
     # 智能搜索逻辑：
@@ -174,12 +176,10 @@ recover_chat_history() {
                         
                         if [ "$strategy" == "1" ]; then
                             # 策略 1：找到即恢复
-                            # 获取精准到毫秒的当前时间并构造新文件名
                             local current_time=$(date +"%Y-%m-%d@%Hh%Mm%Ss%3Nms")
                             local new_filename="${target} - ${current_time}.jsonl"
                             
                             echo "✅ [$target] 匹配成功 (name出现 ${name_count} 次) -> $(basename "$file")"
-                            # 在复制的同时重命名文件，绝对不影响源文件
                             cp "$file" "$chats_dir/$target/$new_filename"
                             if [ $? -eq 0 ]; then
                                 echo "   🎉 复制完成，已重命名为: $new_filename"
@@ -191,9 +191,23 @@ recover_chat_history() {
                             break # 跳出内层 for 循环，处理下一个文件
                             
                         elif [ "$strategy" == "2" ]; then
-                            # 策略 2：记录最高次数和对应文件
+                            # 策略 2：提取最后一次发送的 send_date 时间并比对
+                            # 利用 grep -o 截取所有的 send_date 字段，tail -n 1 取最后一条，cut 分割取出具体时间字符串
+                            local last_date
+                            last_date=$(grep -o '"send_date":"[^"]*"' "$file" | tail -n 1 | cut -d '"' -f 4)
+                            
+                            if [ -n "$last_date" ]; then
+                                local current_latest="${latest_dates["$target"]:-}"
+                                # 字符串按字典序对比时间先后
+                                if [[ "$last_date" > "$current_latest" ]]; then
+                                    latest_dates["$target"]=$last_date
+                                    best_files["$target"]="$file"
+                                fi
+                            fi
+                            
+                        elif [ "$strategy" == "3" ]; then
+                            # 策略 3：记录最高对话次数和对应文件
                             local current_max=${max_counts["$target"]:-0}
-                            # 使用 -gt 确保在次数并列时，取时间更晚的那个（因为 ls -t 最先扫到的是最新的）
                             if [ "$name_count" -gt "$current_max" ]; then
                                 max_counts["$target"]=$name_count
                                 best_files["$target"]="$file"
@@ -205,17 +219,22 @@ recover_chat_history() {
         fi
     done < <(ls -t "${backup_files[@]}")
     
-    # 策略 2 的善后处理：循环结束后执行复制
-    if [ "$strategy" == "2" ]; then
+    # 策略 2/3 的善后处理：循环结束后执行复制
+    if [ "$strategy" == "2" ] || [ "$strategy" == "3" ]; then
         for target in "${!pending_folders[@]}"; do
             local best_file="${best_files["$target"]}"
             if [ -n "$best_file" ]; then
-                local best_count="${max_counts["$target"]}"
-                # 获取精准到毫秒的当前时间并构造新文件名
                 local current_time=$(date +"%Y-%m-%d@%Hh%Mm%Ss%3Nms")
                 local new_filename="${target} - ${current_time}.jsonl"
                 
-                echo "✅ [$target] 匹配成功 (最高对话数: ${best_count} 次) -> $(basename "$best_file")"
+                if [ "$strategy" == "2" ]; then
+                    local best_date="${latest_dates["$target"]}"
+                    echo "✅ [$target] 匹配成功 (最后发送时间: ${best_date}) -> $(basename "$best_file")"
+                elif [ "$strategy" == "3" ]; then
+                    local best_count="${max_counts["$target"]}"
+                    echo "✅ [$target] 匹配成功 (最高对话数: ${best_count} 次) -> $(basename "$best_file")"
+                fi
+                
                 # 在复制的同时重命名文件，绝对不影响源文件
                 cp "$best_file" "$chats_dir/$target/$new_filename"
                 if [ $? -eq 0 ]; then
